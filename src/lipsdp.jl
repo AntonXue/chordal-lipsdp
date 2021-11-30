@@ -17,16 +17,13 @@ struct PartialYSetup <: LipSdpSetupMethod end
 
 @with_kw struct LipSdpOptions
   setupMethod :: LipSdpSetupMethod
+  verbose :: Bool = false
 end
 
 # Construct M1, or smaller variants depending on what is queried with
-function M1(T, A, B, ffnet :: FeedForwardNetwork)
-  if !(ffnet.nettype isa ReluNetwork || ffnet.nettype isa TanhNetwork)
-    error("unsupported network: " * string(ffnet))
-  end
-
-  a = 0
-  b = 1
+function makeM1(T, A, B, ffnet :: FeedForwardNetwork)
+  @assert ffnet.nettype isa ReluNetwork || ffnet.nettype isa TanhNetwork
+  a, b = 0, 1
   _R11 = -2 * a * b * A' * T * A
   _R12 = (a + b) * A' * T * B
   _R21 = (a + b) * B' * T * A
@@ -36,7 +33,7 @@ function M1(T, A, B, ffnet :: FeedForwardNetwork)
 end
 
 # Construct M2
-function M2(ρ, ffnet :: FeedForwardNetwork)
+function makeM2(ρ, ffnet :: FeedForwardNetwork)
   E1 = E(1, ffnet.mdims)
   EK = E(ffnet.K, ffnet.mdims)
   WK = ffnet.Ms[ffnet.K][1:end, 1:end-1]
@@ -59,21 +56,14 @@ function setupViaWholeT(inst :: QueryInstance, opts :: LipSdpOptions)
   λdims = ffnet.λdims
   L = ffnet.L
   β = inst.β
-  p = L - β
 
   # Set up the T matrix as a sum
   Ts = Vector{Any}()
-  for k in 1:p
+  for k in 1:inst.p
     Λkdim = sum(λdims[k:k+β])
     Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
     @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
-
-    if inst.innerSparsity isa TkBanded
-      Tk = Tkbanded(Λkdim, Λk, α=inst.innerSparsity.α)
-    else
-      error("unsupported TkSparsity: " * string(inst.innerSparsity))
-    end
-
+    Tk = makeT(Λkdim, Λk, inst.pattern)
     Fkβ = Ec(k, β, ffnet.λdims)
     push!(Ts, Fkβ' * Tk * Fkβ)
   end
@@ -82,18 +72,16 @@ function setupViaWholeT(inst :: QueryInstance, opts :: LipSdpOptions)
   T = sum(Ts)
   A = sum(E(j, λdims)' * ffnet.Ms[j][1:end, 1:end-1] * E(j, mdims) for j in 1:L)
   B = sum(E(j, λdims)' * E(j+1, mdims) for j in 1:L)
-  _M1 = M1(T, A, B, ffnet)
+  M1 = makeM1(T, A, B, ffnet)
 
   # Set up and query M2
   ρ = @variable(model)
   @constraint(model, ρ >= 0)
-  _M2 = M2(ρ, ffnet)
+  M2 = makeM2(ρ, ffnet)
 
-  # Impose the LMI constraint
-  M = _M1 + _M2
+  # Impose the LMI constraint and objective
+  M = M1 + M2
   @SDconstraint(model, M <= 0)
-
-  # Objective
   @objective(model, Min, ρ)
 
   setup_time = time() - setup_start_time
@@ -113,41 +101,32 @@ function setupViaPartialM1s(inst :: QueryInstance, opts :: LipSdpOptions)
   λdims = ffnet.λdims
   L = ffnet.L
   β = inst.β
-  p = L - β
 
   # Set up the M1s
   A = sum(E(j, λdims)' * ffnet.Ms[j][1:end, 1:end-1] * E(j, mdims) for j in 1:L)
   B = sum(E(j, λdims)' * E(j+1, mdims) for j in 1:L)
   M1s = Vector{Any}()
-  for k in 1:p
+  for k in 1:inst.p
     Λkdim = sum(λdims[k:k+β])
     Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
     @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
-
-    if inst.innerSparsity isa TkBanded
-      Tk = Tkbanded(Λkdim, Λk, α=inst.innerSparsity.α)
-    else
-      error("unsupported TkSparsity: " * string(inst.innerSparsity))
-    end
-
+    Tk = makeT(Λkdim, Λk, inst.pattern)
     Fkβ = Ec(k, β, λdims)
     Tck = Fkβ' * Tk * Fkβ
-    _M1k = M1(Tck, A, B, ffnet)
-    push!(M1s, _M1k)
+    M1k = makeM1(Tck, A, B, ffnet)
+    push!(M1s, M1k)
   end
 
-  _M1 = sum(M1s)
+  M1 = sum(M1s)
 
   # Set up and query M2
   ρ = @variable(model)
   @constraint(model, ρ >= 0)
-  _M2 = M2(ρ, ffnet)
+  M2 = makeM2(ρ, ffnet)
 
-  # Impose the LMI constraint
-  M = _M1 + _M2
+  # Impose the LMI constraint and objective
+  M = M1 + M2
   @SDconstraint(model, M <= 0)
-
-  # Objective
   @objective(model, Min, ρ)
 
   setup_time = time() - setup_start_time
@@ -167,38 +146,36 @@ function setupViaPartialY(inst :: QueryInstance, opts :: LipSdpOptions)
   λdims = ffnet.λdims
   L = ffnet.L
   β = inst.β
-  p = L - β
 
   M1s = Vector{Any}()
-  for k in 1:p
+  for k in 1:inst.p
     Λkdim = sum(λdims[k:k+β])
     Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
     @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
-
-    if inst.innerSparsity isa TkBanded
-      Tk = Tkbanded(Λkdim, Λk, α=inst.innerSparsity.α)
-    else
-      error("unsupported TkSparsity: " * string(inst.innerSparsity))
-    end
-
-    _Yk = Y(k, β, Tk, ffnet)
+    Tk = makeT(Λkdim, Λk, inst.pattern)
+    Yk = makeY(k, β, Tk, ffnet)
     Ekβp1 = Ec(k, β+1, mdims)
-    _M1k = Ekβp1' * _Yk * Ekβp1
-    push!(M1s, _M1k)
+    M1k = Ekβp1' * Yk * Ekβp1
+    push!(M1s, M1k)
   end
 
-  _M1 = sum(M1s)
+  M1 = sum(M1s)
 
   # Set up and query M2
   ρ = @variable(model)
   @constraint(model, ρ >= 0)
-  _M2 = M2(ρ, ffnet)
+  Yinit = makeYinit(β, ρ, ffnet)
+  Yfinal = makeYfinal(β, ffnet)
 
-  # Impose the LMI constraint
-  M = _M1 + _M2
+  G1 = Ec(1, β+1, ffnet.mdims)
+  Gp = Ec(inst.p, β+1, ffnet.mdims)
+  M2 = G1' * Yinit * G1 + Gp' * Yfinal * Gp
+  
+  # M2 = makeM2(ρ, ffnet)
+
+  # Impose the LMI constraint and objective
+  M = M1 + M2
   @SDconstraint(model, M <= 0)
-
-  # Objective
   @objective(model, Min, ρ)
 
   setup_time = time() - setup_start_time

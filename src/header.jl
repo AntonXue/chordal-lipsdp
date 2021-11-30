@@ -33,27 +33,26 @@ abstract type NeuralNetwork end
 end
 
 # Different patterns of sparsity within each Tk
-abstract type TkSparsity end
-
-struct TkNoSparsity <: TkSparsity end
-struct TkOnePerClique <: TkSparsity end
-struct TkOnePerLayer <: TkSparsity end
-struct TkOnePerNeuron <: TkSparsity end
-
-@with_kw struct TkBanded <: TkSparsity
-  α :: Int
-  @assert α >= 0
+abstract type TPattern end
+struct NoPattern <: TPattern end
+struct OnePerNeuronPattern <: TPattern end
+struct OnePerCliquePattern <: TPattern end
+struct OnePerLayerPattern <: TPattern end
+@with_kw struct BandedPattern <: TPattern
+  band :: Int
+  @assert band >= 0
 end
 
-# A solve instance
+# A query instance
 @with_kw struct QueryInstance
   net :: FeedForwardNetwork
-  β :: Int = 0 # The outer sparsity pattern
-  innerSparsity :: TkSparsity
-  @assert β >= 0
+  β :: Int = 0 # The outer sparsity pattern must be banded
+  p :: Int = net.L - β # The number of maximal cliques
+  pattern :: TPattern # In addition, there might be internal sparsity patterns
+  @assert 0 <= β <= net.L - 1
 end
 
-# A solve output
+# A solution output
 @with_kw struct SolutionOutput{M, S, V}
   model :: M
   summary :: S
@@ -66,7 +65,7 @@ end
 
 export NetworkType, ReluNetwork, TanhNetwork
 export NeuralNetwork, FeedForwardNetwork
-export TkSparsity, TkNoSparsity, TkOnePerClique, TkOnePerLayer, TkOnePerNeuron, TkBanded
+export TPattern, NoPattern, OnePerCliquePattern, OnePerLayerPattern, OnePerNeuronPattern, BandedPattern
 export QueryInstance, QueryOptions
 export SolutionOutput
 
