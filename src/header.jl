@@ -24,16 +24,12 @@ abstract type NeuralNetwork end
   # Each M[K] == [Wk bk]
   Ms :: Vector{Matrix{Float64}}
   K :: Int = length(Ms)
+  L :: Int = K - 1
 
   # Assert a non-trivial structural integrity of the network
   @assert length(xdims) >= 3
   @assert length(xdims) == K + 1
   @assert all([size(Ms[k]) == (xdims[k+1], xdims[k]+1) for k in 1:K])
-end
-
-# A solve instance
-@with_kw struct QueryInstance
-  net :: FeedForwardNetwork
 end
 
 # Different patterns of sparsity within each Tk
@@ -44,15 +40,16 @@ struct TkOnePerClique <: TkSparsity end
 struct TkOnePerLayer <: TkSparsity end
 struct TkOnePerNeuron <: TkSparsity end
 
-@with_kw struct TkαBanded <: TkSparsity
+@with_kw struct TkBanded <: TkSparsity
   α :: Int
   @assert α >= 0
 end
 
-# Possible options
-@with_kw struct QueryOptions
-  β :: Int = 0
-  TkSparsity :: TkSparsity
+# A solve instance
+@with_kw struct QueryInstance
+  net :: FeedForwardNetwork
+  β :: Int = 0 # The outer sparsity pattern
+  innerSparsity :: TkSparsity
   @assert β >= 0
 end
 
@@ -69,7 +66,7 @@ end
 
 export NetworkType, ReluNetwork, TanhNetwork
 export NeuralNetwork, FeedForwardNetwork
-export TkSparsity, TkNoSparsity, TkOnePerClique, TkOnePerLayer, TkOnePerNeuron, TkαBanded
+export TkSparsity, TkNoSparsity, TkOnePerClique, TkOnePerLayer, TkOnePerNeuron, TkBanded
 export QueryInstance, QueryOptions
 export SolutionOutput
 

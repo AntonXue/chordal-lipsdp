@@ -41,6 +41,38 @@ function Ac(k :: Int, β :: Int, ffnet :: FeedForwardNetwork)
   return Aslice
 end
 
+# Construct the Y
+function Y(k :: Int, β :: Int, Tk, ffnet :: FeedForwardNetwork)
+  @assert ffnet.nettype isa ReluNetwork or ffnet.nettype isa TanhNetwork
+  @assert k >= 1 && β >= 0
+  @assert 1 <= k + β <= ffnet.L
+
+  λdims = ffnet.λdims
+  Λkdim = sum(λdims[k:k+β])
+  @assert size(Tk) == (Λkdim, Λkdim)
+
+  # Generate the individual in the overlapping block matrix
+  a = 0
+  b = 1
+  Ack = Ac(k, β, ffnet)
+  _R11 = -2 * a * b * Ack' * Tk * Ack
+  _R12 = (a + b) * Ack' * Tk
+  _R21 = (a + b) * Tk * Ack
+  _R22 = -2 * Tk
+
+  # Expand each _R11 and add them
+  mdims = ffnet.mdims
+  ydims = mdims[k:k+β+1]
+  G1 = Ec(1, β, ydims)
+  G2 = Ec(2, β, ydims)
+  _Yk11 = G1' * _R11 * G1
+  _Yk12 = G1' * _R12 * G2
+  _Yk21 = G2' * _R21 * G1
+  _Yk22 = G2' * _R22 * G2
+  Yk = _Yk11 + _Yk12 + _Yk21 + _Yk22
+  return Yk
+end
+
 # A banded Tk matrix with bandwidth α
 function Tkbanded(dim :: Int, Λ; α :: Int = 0)
   @assert size(Λ) == (dim, dim)
@@ -62,7 +94,7 @@ end
 #
 export e, E, Ec
 export Tkbanded
-export Ac
+export Ac, Y
 
 end # End module
 

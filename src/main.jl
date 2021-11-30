@@ -33,13 +33,15 @@ for k = 1:p
   push!(Ls, Symmetric(randn(ldim, ldim)))
 end
 
-inst = QueryInstance(net=ffnet)
+innerSparsity = TkBanded(α=α)
 
-opts = QueryOptions(β=β, TkSparsity=TkαBanded(α=α))
+inst = QueryInstance(net=ffnet, β=β, innerSparsity=innerSparsity)
 
+wholeTopts = LipSdpOptions(setupMethod=WholeTSetup()) 
+partialM1opts = LipSdpOptions(setupMethod=PartialM1Setup()) 
+partialYopts = LipSdpOptions(setupMethod=PartialYSetup())
 
-A = sum(E(j, λdims)' * ffnet.Ms[j][1:end, 1:end-1] * E(j, mdims) for j in 1:L)
-B = sum(E(j, λdims)' * E(j+1, mdims) for j in 1:L)
-
-soln = LipSdp.run(inst, opts)
+solny = LipSdp.run(inst, partialYopts)
+solnwhole = LipSdp.run(inst, wholeTopts)
+solnm1 = LipSdp.run(inst, partialM1opts)
 
