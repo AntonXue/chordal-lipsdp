@@ -20,12 +20,12 @@ function testEquivMs(inst :: QueryInstance)
   Ts = Vector{Any}()
   for k in 1:inst.p
     Λkdim = sum(λdims[k:k+β])
-    Λk = Symmetric(randn(Λkdim, Λkdim))
+    Λk = Symmetric(abs.(randn(Λkdim, Λkdim)))
     Tk = makeT(Λkdim, Λk, inst.pattern)
     push!(Ts, Tk)
   end
 
-  ρ = randn()
+  ρ = abs.(randn())
 
   # Make the simple version of M first
   T = sum(Ec(k, β, λdims)' * Ts[k] * Ec(k, β, λdims) for k in 1:inst.p)
@@ -58,9 +58,36 @@ function testEquivMs(inst :: QueryInstance)
 
   Mdiff = simpleM - decomposedM
   maxdiff = maximum(abs.(Mdiff))
+  # println("maxdiff: " * string(maxdiff))
+  @assert maxdiff <= 1e-13
+  return (simpleM1, simpleM2)
+end
+
+function testΩinv(inst :: QueryInstance)
+  ffnet = inst.net
+  mdims = ffnet.mdims
+  β = inst.β
+  p = inst.p
+
+  M1, M2 = testEquivMs(inst)
+  M = M1 + M2
+  Ωinv = makeΩinv(β+1, mdims)
+  Mscaled = M .* Ωinv
+
+  Zs = Vector{Any}()
+  for k in 1:p
+    Ekβp1 = Ec(k, β+1, mdims)
+    Zk = Ekβp1 * Mscaled * Ekβp1'
+    push!(Zs, Zk)
+  end
+
+  Mrecovered = sum(Ec(k, β+1, mdims)' * Zs[k] * Ec(k, β+1, mdims) for k in 1:p)
+  Mdiff = M - Mrecovered
+  maxdiff = maximum(abs.(Mdiff))
   println("maxdiff: " * string(maxdiff))
   @assert maxdiff <= 1e-13
 end
+
 
 
 end # End module

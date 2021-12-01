@@ -119,10 +119,32 @@ function makeT(Λdim :: Int, Λ, pattern :: TPattern)
   end
 end
 
+# Overlap counter
+function makeΩ(band :: Int, dims :: Vector{Int})
+  p = length(dims) - band
+  @assert p >= 1
+  Ω = zeros(sum(dims), sum(dims))
+  for k in 1:p
+    Eck = Ec(k, band, dims)
+    onesies = fill(1, size(Eck * Eck'))
+    Ωk = Eck' * onesies * Eck
+    Ω += Ωk
+  end
+  return Ω
+end
+
+function makeΩinv(band :: Int, dims :: Vector{Int})
+  Ω = makeΩ(band, dims)
+  Ωinv = 1 ./ Ω
+  Ωinv[isinf.(Ωinv)] .= 0
+  return Ωinv
+end
+
 #
 export e, E, Ec
 export makeT, makeBandedT
 export makeAc, makeY, makeYinit, makeYfinal
+export makeΩ, makeΩinv
 
 end # End module
 

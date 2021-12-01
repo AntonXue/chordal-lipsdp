@@ -42,13 +42,42 @@ function setup(inst :: QueryInstance, opts :: SplitLipSdpOptions)
   Yinit = makeYinit(β, ρ, ffnet)
   Yfinal = makeYfinal(β, ffnet)
 
+  # Make the M1s
+  M1s = Vector{Any}()
+  for k in 1:p
+    Ekβp1 = Ec(k, β+1, mdims)
+    M1k = Ekβp1' * Ys[k] * Ekβp1
+    push!(M1s, M1k)
+  end
+
+  M1 = sum(M1s)
+
+  E1βp1 = Ec(1, β+1, mdims)
+  Epβp1 = Ec(p, β+1, mdims)
+  M2 = E1βp1' * Yinit * E1βp1 + Epβp1' * Yfinal * Epβp1
+  M = M1 + M2
+
+  # Make each Z partition
+  Ωinv = makeΩinv(β+1, mdims)
+  Mscaled = M .* Ωinv
+  for k in 1:p
+    Ekβp1 = Ec(k, β+1, mdims)
+    Zk = Ekβp1 * Mscaled * Ekβp1'
+    @SDconstraint(model, Zk <= 0)
+  end
+
+  #=
   # Make each Zk and assert the NSD constraint
+  Zs = Vector{Any}()
   for k in 1:p
     Zk = Ys[k]
     if k == 1; Zk += Yinit end
     if k == p; Zk += Yfinal end
     @SDconstraint(model, Zk <= 0)
+    push!(Zs, Zk)
   end
+  =#
+
 
   # Set up objective and return
   @objective(model, Min, ρ)

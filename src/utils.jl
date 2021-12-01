@@ -22,12 +22,12 @@ function fileReadFloat64(file :: String)
 end
 
 # Generate a random network given the desired dimensions at each layer
-function randomNetwork(xdims :: Vector{Int64}; nettype :: NetworkType = ReluNetwork())
+function randomNetwork(xdims :: Vector{Int64}; nettype :: NetworkType = ReluNetwork(), σ :: Float64 = 1.0)
   @assert length(xdims) > 1
   Ms = Vector{Any}()
   for k = 1:length(xdims) - 1
     # Width is xdims[k]+1 because Mk = [Wk bk]
-    Mk = randn(xdims[k+1], xdims[k]+1)
+    Mk = randn(xdims[k+1], xdims[k]+1) * σ
     push!(Ms, Mk)
   end
   return FeedForwardNetwork(nettype=nettype, xdims=xdims, Ms=Ms)
