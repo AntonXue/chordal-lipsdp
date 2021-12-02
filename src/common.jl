@@ -41,8 +41,8 @@ function makeAc(k :: Int, β :: Int, ffnet :: FeedForwardNetwork)
   return Ack
 end
 
-# Construct the Y
-function makeY(k :: Int, β :: Int, Tk, ffnet :: FeedForwardNetwork)
+# Construct the X
+function makeX(k :: Int, β :: Int, Tk, ffnet :: FeedForwardNetwork)
   @assert ffnet.nettype isa ReluNetwork or ffnet.nettype isa TanhNetwork
   @assert k >= 1 && β >= 0
   @assert 1 <= k + β <= ffnet.L
@@ -62,29 +62,29 @@ function makeY(k :: Int, β :: Int, Tk, ffnet :: FeedForwardNetwork)
   ydims = ffnet.mdims[k:k+β+1]
   G1 = Ec(1, β, ydims)
   G2 = Ec(2, β, ydims)
-  _Yk11 = G1' * _R11 * G1
-  _Yk12 = G1' * _R12 * G2
-  _Yk21 = _Yk12'
-  _Yk22 = G2' * _R22 * G2
-  Yk = _Yk11 + _Yk12 + _Yk21 + _Yk22
-  return Yk
+  _Xk11 = G1' * _R11 * G1
+  _Xk12 = G1' * _R12 * G2
+  _Xk21 = _Xk12'
+  _Xk22 = G2' * _R22 * G2
+  Xk = _Xk11 + _Xk12 + _Xk21 + _Xk22
+  return Xk
 end
 
-# Construct the initial Y
-function makeYinit(β :: Int, ρ, ffnet :: FeedForwardNetwork)
+# Construct the initial X
+function makeXinit(β :: Int, ρ, ffnet :: FeedForwardNetwork)
   ydims = ffnet.mdims[1:1+β+1]
   G1 = E(1, ydims)
-  Yinit = -ρ * G1' * G1
-  return Yinit
+  Xinit = -ρ * G1' * G1
+  return Xinit
 end
 
-# Construct the final Y
-function makeYfinal(β :: Int, ffnet :: FeedForwardNetwork)
+# Construct the final X
+function makeXfinal(β :: Int, ffnet :: FeedForwardNetwork)
   ydims = ffnet.mdims[(ffnet.K-β-1):ffnet.K]
   WK = ffnet.Ms[ffnet.K][1:end, 1:end-1]
   Gfinal = E(1+β+1, ydims)
-  Yfinal = Gfinal' * WK' * WK * Gfinal
-  return Yfinal
+  Xfinal = Gfinal' * WK' * WK * Gfinal
+  return Xfinal
 end
 
 # A banded T matrix; if band >= dim then T is dense
@@ -133,6 +133,7 @@ function makeΩ(band :: Int, dims :: Vector{Int})
   return Ω
 end
 
+#
 function makeΩinv(band :: Int, dims :: Vector{Int})
   Ω = makeΩ(band, dims)
   Ωinv = 1 ./ Ω
@@ -140,11 +141,67 @@ function makeΩinv(band :: Int, dims :: Vector{Int})
   return Ωinv
 end
 
+# Selectors for γ
+function Hc(k :: Int, band :: Int, j :: Int, γdims :: Vector{Int})
+end
+
+# Calculate the relevant partition tuples
+function makePartitionTuples(k :: Int, band :: Int, dims :: Vector{Int})
+  lendims = length(dims)
+  @assert k >= 1 && band >= 0
+  @assert 1 <= k + band <= lendims
+  jtups = Vector{Any}()
+  for j in -band:band
+    if (1 <= k + j <= lendims) && (1 <= k + j + band <= lendims)
+      # The dimensions relevant to the j block
+      jdims = dims[(k+j) : (k+j+band)]
+
+      # The low/high slices of jdims
+      slicelow = (j > 0) ? 1 : 1-j
+      slicehigh = (j > 0) ? band+1-j : band+1
+
+      # The insertion places within the kdim block
+      inslow = (j > 0) ? 1+j : 1
+      inshigh = (j > 0) ? band+1 : band+1+j
+      # println("at j: " * string(j) * ", slices: " * string((slicelow, slicehigh)) * ", ins: " * string((inslow, inshigh)) * ", jdims: " * string(jdims))
+      push!(jtups, (j, slicelow, slicehigh, inslow, inshigh))
+    end
+  end
+
+  kdims = dims[k:k+band]
+  return(kdims, jtups)
+end
+
+# Construct M1, or smaller variants depending on what is queried with
+function makeM1(T, A, B, ffnet :: FeedForwardNetwork)
+  @assert ffnet.nettype isa ReluNetwork || ffnet.nettype isa TanhNetwork
+  a, b = 0, 1
+  _R11 = -2 * a * b * A' * T * A
+  _R12 = (a + b) * A' * T * B
+  _R21 = (a + b) * B' * T * A
+  _R22 = -2 * B' * T * B
+  M1 = _R11 + _R12 + _R21 + _R22
+  return M1
+end
+
+# Construct M2
+function makeM2(ρ, ffnet :: FeedForwardNetwork)
+  E1 = E(1, ffnet.mdims)
+  EK = E(ffnet.K, ffnet.mdims)
+  WK = ffnet.Ms[ffnet.K][1:end, 1:end-1]
+  _R1 = -ρ * E1' * E1
+  _R2 = EK' * (WK' * WK) * EK
+  M2 = _R1 + _R2
+  return M2
+end
+
 #
 export e, E, Ec
 export makeT, makeBandedT
-export makeAc, makeY, makeYinit, makeYfinal
+export makeAc, makeX, makeXinit, makeXfinal
 export makeΩ, makeΩinv
+export makeM1, makeM2
+export makePartitionTuples
 
 end # End module
 

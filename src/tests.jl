@@ -37,24 +37,24 @@ function testEquivMs(inst :: QueryInstance)
   simpleM = simpleM1 + simpleM2
 
   # Now make the decomposed version
+  Xs = Vector{Any}()
+  for k in 1:inst.p
+    Xk = makeX(k, β, Ts[k], ffnet)
+    push!(Xs, Xk)
+  end
+
+  Xinit = makeXinit(β, ρ, ffnet)
+  Xfinal = makeXfinal(β, ffnet)
+
   Ys = Vector{Any}()
   for k in 1:inst.p
-    Yk = makeY(k, β, Ts[k], ffnet)
+    Yk = Xs[k]
+    if k == 1; Yk += Xinit end
+    if k == inst.p; Yk += Xfinal end
     push!(Ys, Yk)
   end
 
-  Yinit = makeYinit(β, ρ, ffnet)
-  Yfinal = makeYfinal(β, ffnet)
-
-  Zs = Vector{Any}()
-  for k in 1:inst.p
-    Zk = Ys[k]
-    if k == 1; Zk += Yinit end
-    if k == inst.p; Zk += Yfinal end
-    push!(Zs, Zk)
-  end
-
-  decomposedM = sum(Ec(k, β+1, mdims)' * Zs[k] * Ec(k, β+1, mdims) for k in 1:inst.p)
+  decomposedM = sum(Ec(k, β+1, mdims)' * Ys[k] * Ec(k, β+1, mdims) for k in 1:inst.p)
 
   Mdiff = simpleM - decomposedM
   maxdiff = maximum(abs.(Mdiff))

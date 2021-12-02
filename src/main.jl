@@ -16,9 +16,9 @@ Random.seed!(1234)
 
 #
 # xdims = [2;3;4;3;4]
-# xdims = [2;3;4;5;6;7;6;5;4;3;2]
+xdims = [2;3;4;5;6;7;6;5;4;3;2]
 # xdims = [2; 20; 20; 20; 20; 20; 20; 2]
-xdims = [2; 10; 10; 10; 10; 10; 10; 10; 2]
+# xdims = [2; 10; 10; 10; 10; 10; 10; 10; 2]
 mdims = xdims[1:end-1]
 λdims = mdims[2:end]
 
@@ -30,15 +30,33 @@ reginst = QueryInstance(net=ffnet, β=1, pattern=OnePerNeuronPattern())
 splitinst = QueryInstance(net=ffnet, β=3, pattern=BandedPattern(band=8))
 
 #
-wholeTopts = LipSdpOptions(setupMethod=WholeTSetup()) 
-partialM1opts = LipSdpOptions(setupMethod=PartialM1Setup()) 
-partialYopts = LipSdpOptions(setupMethod=PartialYSetup())
+SimpleTopts = LipSdpOptions(setupMethod=LipSdp.WholeTSetup()) 
+SimpleXopts = LipSdpOptions(setupMethod=LipSdp.SummedXSetup())
+SimpleZopts = LipSdpOptions(setupMethod=LipSdp.ScaledZSetup())
 
-solny = LipSdp.run(reginst, partialYopts)
-solnw = LipSdp.run(reginst, wholeTopts)
-solnm = LipSdp.run(reginst, partialM1opts)
+solnT = LipSdp.run(reginst, SimpleTopts)
+println("solnT: " * string(solnT))
+println("")
+
+solnX = LipSdp.run(reginst, SimpleXopts)
+println("solnX: " * string(solnX))
+println("")
+
+solnZ = LipSdp.run(reginst, SimpleZopts)
+println("solnZ: " * string(solnZ))
+println("")
 
 #
+
+SplitSopts = SplitLipSdpOptions(setupMethod=SplitLipSdp.SimpleSetup())
+
+solnS = SplitLipSdp.run(splitinst, SplitSopts)
+println("solnS: " * string(solnS))
+println("")
+
+
+#=
 splitopts = SplitLipSdpOptions()
 solnsplit = SplitLipSdp.run(splitinst, splitopts)
+=#
 
