@@ -24,15 +24,15 @@ function setupViaSimple(model, inst :: QueryInstance, opts :: SplitLipSdpOptions
   setup_start_time = time()
 
   ffnet = inst.net
-  mdims = ffnet.mdims
-  λdims = ffnet.λdims
+  edims = ffnet.edims
+  fdims = ffnet.fdims
   L = ffnet.L
   β = inst.β
   p = inst.p
 
   Xs = Vector{Any}()
   for k in 1:inst.p
-    Λkdim = sum(λdims[k:k+β])
+    Λkdim = sum(fdims[k:k+β])
     Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
     @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
     Tk = makeT(Λkdim, Λk, inst.pattern)
@@ -45,22 +45,22 @@ function setupViaSimple(model, inst :: QueryInstance, opts :: SplitLipSdpOptions
 
   Xinit = makeXinit(β, ρ, ffnet)
   Xfinal = makeXfinal(β, ffnet)
-  E1βp1 = Ec(1, β+1, mdims)
-  Epβp1 = Ec(inst.p, β+1, mdims)
+  Ec1 = Ec(1, β+1, edims)
+  Ecp = Ec(inst.p, β+1, edims)
 
   # Construct the big Z
-  bigZ = E1βp1' * Xinit * E1βp1 + Epβp1' * Xfinal * Epβp1
+  bigZ = Ec1' * Xinit * Ec1 + Ecp' * Xfinal * Ecp
   for k in 1:p
-    Ekβp1 = Ec(k, β+1, mdims)
-    bigZ += Ekβp1' * Xs[k] * Ekβp1
+    Eck = Ec(k, β+1, edims)
+    bigZ += Eck' * Xs[k] * Eck
   end
 
   # Make each Z partition
-  Ωinv = makeΩinv(β+1, mdims)
+  Ωinv = makeΩinv(β+1, edims)
   bigZscaled = bigZ .* Ωinv
   for k in 1:p
-    Ekβp1 = Ec(k, β+1, mdims)
-    Zk = Ekβp1 * bigZscaled * Ekβp1'
+    Eck = Ec(k, β+1, edims)
+    Zk = Eck * bigZscaled * Eck'
     @SDconstraint(model, Zk <= 0)
   end
 
@@ -71,25 +71,18 @@ function setupViaSimple(model, inst :: QueryInstance, opts :: SplitLipSdpOptions
 end
 
 # Make each Zk, albeit probably inefficiently
-# function makeZ(k :: Int, β :: Int, γ, γdims :: Vector{Int}, mdims)
-function makeZ(k :: Int, β :: Int, Ys :: Vector{Any}, Ωkinv :: Matrix{Float64}, mdims :: Vector{Int})
-  @assert 1 <= k <= length(mdims)
+# function makeZ(k :: Int, β :: Int, γ, γdims :: Vector{Int}, edims)
+function makeZ(k :: Int, β :: Int, Ys :: Vector{Any}, Ωkinv :: Matrix{Float64}, edims :: Vector{Int})
+  @assert 1 <= k <= length(edims)
 
   Zk = Ys[k]
-  kdims, tups = makePartitionTuples(k, β+1, mdims)
-  for (j, (slicelow, slicehigh), (inslow, inshigh), jdims) in tups
+  kdims, tups = makeTilingInfo(k, β+1, edims)
+  for (j, (slicelow, slicehigh), (insertlow, inserthigh), jdims) in tups
     if j == 0; continue end
 
     Eslice = vcat([E(i, jdims) for i in slicelow:slicehigh]...)
-    
-    # println("Ys[" * string(k+j) * "]: " * string(size(Ys[k+j])))
-    # println("Eslice size: " * string(size(Eslice)))
-
     slicedY = Eslice * Ys[k+j] * Eslice'
-
-    # println("slicedY size: " * string(size(slicedY)))
-    Eins = vcat([E(i, kdims) for i in inslow:inshigh]...)
-    # println("Eins size: " * string(size(Eins)))
+    Eins = vcat([E(i, kdims) for i in insertlow:inserthigh]...)
     Zk += Eins' * slicedY * Eins
   end
 
@@ -101,14 +94,14 @@ end
 function setupViaΓ(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
   setup_start_time = time()
   ffnet = inst.net
-  mdims = ffnet.mdims
-  λdims = ffnet.λdims
+  edims = ffnet.edims
+  fdims = ffnet.fdims
   L = ffnet.L
   β = inst.β
 
   Xs = Vector{Any}()
   for k in 1:inst.p
-    Λkdim = sum(λdims[k:k+β])
+    Λkdim = sum(fdims[k:k+β])
     Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
     @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
     Tk = makeT(Λkdim, Λk, inst.pattern)
@@ -129,12 +122,12 @@ function setupViaΓ(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
     push!(Ys, Yk)
   end
 
-  Ωinv = makeΩinv(β+1, mdims)
+  Ωinv = makeΩinv(β+1, edims)
 
   for k in 1:inst.p
-    Eck = Ec(k, β+1, mdims)
+    Eck = Ec(k, β+1, edims)
     Ωkinv = Eck * Ωinv * Eck'
-    Zk = makeZ(k, β, Ys, Ωkinv, mdims)
+    Zk = makeZ(k, β, Ys, Ωkinv, edims)
     @SDconstraint(model, Zk <= 0)
   end
   

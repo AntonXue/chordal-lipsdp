@@ -23,30 +23,32 @@ function E(i :: Int, dims :: Vector{Int})
   return E
 end
 
-# The kth β-banded block index matrix
-function Ec(k :: Int, β :: Int, dims :: Vector{Int})
-  @assert k >= 1 && β >= 0
-  @assert 1 <= k + β <= length(dims)
-  Ejs = [E(j, dims) for j in k:(k+β)]
+# Block matrix for [k; k+1; ...; k+b]
+# Assertion fails on out-of-bounds
+function Ec(k :: Int, b :: Int, dims :: Vector{Int})
+  @assert k >= 1 && b >= 0
+  @assert 1 <= k + b <= length(dims)
+  Ejs = [E(j, dims) for j in k:(k+b)]
   return vcat(Ejs...)
 end
 
-# Block index matrix for k-band to k+band blocks
-function Hc(k :: Int, β :: Int, dims :: Vector{Int})
+# Consider the r-radius about k; i.e. [k-r; ...; k; ...; k+r]
+# Allows radius to under/overflow
+function Hc(k :: Int, r :: Int, dims :: Vector{Int})
   lendims = length(dims)
-  @assert k >= 1 && β >= 0
+  @assert k >= 1 && r >= 0
   @assert 1 <= k <= lendims
-  Ejs = [E(k+j, dims) for j in -β:β if 1 <= k+j <= lendims]
+  Ejs = [E(k+j, dims) for j in -r:r if 1 <= k+j <= lendims]
   return vcat(Ejs...)
 end
 
-# Get the A(k, β) slice
+# Construct blockdiag(W[k], ..., W[k+β]) by summing Fk' * Wk * Ek
 function makeAc(k :: Int, β :: Int, ffnet :: FeedForwardNetwork)
   @assert k >= 1 && β >= 0
-  @assert 1 <= k + β <= ffnet.K - 1
-  mslice = ffnet.mdims[k:(k+β)]
-  λslice = ffnet.λdims[k:(k+β)]
-  Ack = sum(E(j, λslice)' * ffnet.Ms[k+j-1][1:end, 1:end-1] * E(j, mslice) for j in 1:β+1)
+  @assert 1 <= k + β <= ffnet.L
+  eds = ffnet.edims[k:(k+β)]
+  fds = ffnet.fdims[k:(k+β)]
+  Ack = sum(E(j, fds)' * ffnet.Ms[k+j-1][1:end, 1:end-1] * E(j, eds) for j in 1:β+1)
   return Ack
 end
 
@@ -56,19 +58,19 @@ function makeX(k :: Int, β :: Int, Tk, ffnet :: FeedForwardNetwork)
   @assert k >= 1 && β >= 0
   @assert 1 <= k + β <= ffnet.L
 
-  λdims = ffnet.λdims
-  Λkdim = sum(λdims[k:k+β])
+  fdims = ffnet.fdims
+  Λkdim = sum(fdims[k:k+β])
   @assert size(Tk) == (Λkdim, Λkdim)
 
   # Generate the individual in the overlapping block matrix
-  a, b = 0, 1
+  seclow, sechigh = 0, 1
   Ack = makeAc(k, β, ffnet)
-  _R11 = -2 * a * b * Ack' * Tk * Ack
-  _R12 = (a + b) * Ack' * Tk
+  _R11 = -2 * seclow * sechigh * Ack' * Tk * Ack
+  _R12 = (seclow + sechigh) * Ack' * Tk
   _R22 = -2 * Tk
 
   # Expand each _R11 and add them
-  ydims = ffnet.mdims[k:k+β+1]
+  ydims = ffnet.edims[k:k+β+1]
   G1 = Ec(1, β, ydims)
   G2 = Ec(2, β, ydims)
   _Xk11 = G1' * _R11 * G1
@@ -81,7 +83,7 @@ end
 
 # Construct the initial X
 function makeXinit(β :: Int, ρ, ffnet :: FeedForwardNetwork)
-  ydims = ffnet.mdims[1:1+β+1]
+  ydims = ffnet.edims[1:1+β+1]
   G1 = E(1, ydims)
   Xinit = -ρ * G1' * G1
   return Xinit
@@ -89,19 +91,19 @@ end
 
 # Construct the final X
 function makeXfinal(β :: Int, ffnet :: FeedForwardNetwork)
-  ydims = ffnet.mdims[(ffnet.K-β-1):ffnet.K]
+  ydims = ffnet.edims[(ffnet.K-β-1):ffnet.K]
   WK = ffnet.Ms[ffnet.K][1:end, 1:end-1]
-  Gfinal = E(1+β+1, ydims)
-  Xfinal = Gfinal' * WK' * WK * Gfinal
+  Gend = E(1+β+1, ydims)
+  Xfinal = Gend' * WK' * WK * Gend
   return Xfinal
 end
 
-# A banded T matrix; if band >= dim then T is dense
-function makeBandedT(dim :: Int, Λ; band :: Int = 0)
+# A banded T matrix with band b; if b >= dim then T is dense
+function makeBandedT(dim :: Int, Λ; b :: Int = 0)
   @assert size(Λ) == (dim, dim)
   diagΛ = diagm(diag(Λ))
-  if band > 0
-    ijs = [(i, j) for i in 1:(dim-1) for j in (i+1):dim if abs(i-j) <= band]
+  if b > 0
+    ijs = [(i, j) for i in 1:(dim-1) for j in (i+1):dim if abs(i-j) <= b]
     δts = [e(i, dim)' - e(j, dim)' for (i, j) in ijs]
     Δ = vcat(δts...)
     V = diagm(vec([Λ[i,j] for (i, j) in ijs]))
@@ -116,13 +118,13 @@ end
 function makeT(Λdim :: Int, Λ, pattern :: TPattern)
   if pattern isa BandedPattern
     @assert size(Λ) == (Λdim, Λdim)
-    return makeBandedT(Λdim, Λ, band=pattern.band)
+    return makeBandedT(Λdim, Λ, b=pattern.band)
   elseif pattern isa NoPattern
     @assert size(Λ) == (Λdim, Λdim)
-    return makeBandedT(Λdim, Λ, band=Λdim)
+    return makeBandedT(Λdim, Λ, b=Λdim)
   elseif pattern isa OnePerNeuronPattern
     @assert size(Λ) == (Λdim, Λdim)
-    return makeBandedT(Λdim, Λ, band=0)
+    return makeBandedT(Λdim, Λ, b=0)
   else
     error("unsupported pattern: " * string(pattern))
   end
@@ -146,82 +148,71 @@ function makeY(k :: Int, β :: Int, γk, ffnet :: FeedForwardNetwork, pattern ::
   Xk = makeX(k, β, Tk, ffnet)
 
   # Then check to see if we should add the Xinit
-  if k == 1
-    ρ = γk[1]
-    Xinit = makeXinit(β, ρ, ffnet)
-    Xk += Xinit
-  end
+  if k == 1; Xk += makeXinit(β, γk[1], ffnet) end
 
   # ... and the Xfinal in a separate condition in case p == 1
-  if k + β == ffnet.L
-    Xfinal = makeXfinal(β, ffnet)
-    Xk += Xfinal
-  end
+  if k + β == ffnet.L; Xk += makeXfinal(β, ffnet) end
 
   return Xk
 end
 
-
-
-
-# Overlap counter
-function makeΩ(band :: Int, dims :: Vector{Int})
-  p = length(dims) - band
+# Overlap counter for a general banded structure
+function makeΩ(b :: Int, dims :: Vector{Int})
+  p = length(dims) - b
   @assert p >= 1
   Ω = zeros(sum(dims), sum(dims))
   for k in 1:p
-    Eck = Ec(k, band, dims)
-    onesies = fill(1, size(Eck * Eck'))
-    Ωk = Eck' * onesies * Eck
-    Ω += Ωk
+    Eck = Ec(k, b, dims)
+    height = size(Eck)[1]
+    Ω += Eck' * (fill(1, (height, height))) * Eck
   end
   return Ω
 end
 
-#
-function makeΩinv(band :: Int, dims :: Vector{Int})
-  Ω = makeΩ(band, dims)
+# Make the ℧ matrix that is the "inverse" of Ω
+function makeΩinv(b :: Int, dims :: Vector{Int})
+  Ω = makeΩ(b, dims)
   Ωinv = 1 ./ Ω
   Ωinv[isinf.(Ωinv)] .= 0
   return Ωinv
 end
 
 # Calculate the relevant partition tuples
-function makePartitionTuples(k :: Int, band :: Int, dims :: Vector{Int})
+function makeTilingInfo(k :: Int, b :: Int, dims :: Vector{Int})
   lendims = length(dims)
-  @assert k >= 1 && band >= 0
-  @assert 1 <= k + band <= lendims
+  @assert k >= 1 && b >= 0
+  @assert 1 <= k + b <= lendims
   jtups = Vector{Any}()
-  for j in -band:band
-    if (1 <= k + j <= lendims) && (1 <= k + j + band <= lendims)
+  for j in -b:b
+    if (1 <= k + j <= lendims) && (1 <= k + j + b <= lendims)
       # The dimensions relevant to the j block
-      jdims = dims[(k+j) : (k+j+band)]
+      jdims = dims[(k+j) : (k+j+b)]
 
       # The low/high slices of jdims
-      slicelow = (j > 0) ? 1 : 1-j
-      slicehigh = (j > 0) ? band+1-j : band+1
+      slicelow = (j > 0) ? 1 : (1 - j)
+      slicehigh = (j > 0) ? (b + 1 - j) : (b + 1)
       jslice = (slicelow, slicehigh)
 
       # The insertion places within the kdim block
-      inslow = (j > 0) ? 1+j : 1
-      inshigh = (j > 0) ? band+1 : band+1+j
-      jins = (inslow, inshigh)
-      # println("at j: " * string(j) * ", slices: " * string((slicelow, slicehigh)) * ", ins: " * string((inslow, inshigh)) * ", jdims: " * string(jdims))
-      push!(jtups, (j, jslice, jins, jdims))
+      insertlow = (j > 0) ? (1 + j) : 1
+      inserthigh = (j > 0) ? (b + 1) : (b + 1 + j)
+      jinsert = (insertlow, inserthigh)
+
+      push!(jtups, (j, jslice, jinsert, jdims))
     end
   end
 
-  kdims = dims[k:k+band]
+  kdims = dims[k:k+b]
   return(kdims, jtups)
 end
 
 # Construct M1, or smaller variants depending on what is queried with
 function makeM1(T, A, B, ffnet :: FeedForwardNetwork)
   @assert ffnet.nettype isa ReluNetwork || ffnet.nettype isa TanhNetwork
-  a, b = 0, 1
-  _R11 = -2 * a * b * A' * T * A
-  _R12 = (a + b) * A' * T * B
-  _R21 = (a + b) * B' * T * A
+  seclow, sechigh = 0, 1
+  _R11 = -2 * seclow * sechigh * A' * T * A
+  _R12 = (seclow + sechigh) * A' * T * B
+  _R21 = _R12'
   _R22 = -2 * B' * T * B
   M1 = _R11 + _R12 + _R21 + _R22
   return M1
@@ -229,8 +220,8 @@ end
 
 # Construct M2
 function makeM2(ρ, ffnet :: FeedForwardNetwork)
-  E1 = E(1, ffnet.mdims)
-  EK = E(ffnet.K, ffnet.mdims)
+  E1 = E(1, ffnet.edims)
+  EK = E(ffnet.K, ffnet.edims)
   WK = ffnet.Ms[ffnet.K][1:end, 1:end-1]
   _R1 = -ρ * E1' * E1
   _R2 = EK' * (WK' * WK) * EK
@@ -244,7 +235,7 @@ export makeT, makeBandedT
 export makeAc, makeX, makeXinit, makeXfinal
 export makeΩ, makeΩinv
 export makeM1, makeM2
-export makePartitionTuples
+export makeTilingInfo
 
 end # End module
 

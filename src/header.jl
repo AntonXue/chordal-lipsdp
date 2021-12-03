@@ -18,8 +18,8 @@ abstract type NeuralNetwork end
   xdims :: Vector{Int}
 
   # The dimensions for the T
-  mdims :: Vector{Int} = xdims[1:end-1]
-  λdims :: Vector{Int} = mdims[2:end]
+  edims :: Vector{Int} = xdims[1:end-1]
+  fdims :: Vector{Int} = edims[2:end]
 
   # Each M[K] == [Wk bk]
   Ms :: Vector{Matrix{Float64}}

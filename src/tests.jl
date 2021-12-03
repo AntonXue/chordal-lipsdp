@@ -12,23 +12,23 @@ using Random
 # Test that two different formulations of M are equivalent
 function testEquivMs(inst :: QueryInstance; verbose :: Bool = true)
   ffnet = inst.net
-  mdims = ffnet.mdims
-  λdims = ffnet.λdims
+  edims = ffnet.edims
+  fdims = ffnet.fdims
   L = ffnet.L
   β = inst.β
 
   Ts = Vector{Any}()
   for k in 1:inst.p
-    Λkdim = sum(λdims[k:k+β])
+    Λkdim = sum(fdims[k:k+β])
     Λk = Symmetric(abs.(randn(Λkdim, Λkdim)))
     Tk = makeT(Λkdim, Λk, inst.pattern)
     push!(Ts, Tk)
   end
 
   # Make the simple version of M first
-  T = sum(Ec(k, β, λdims)' * Ts[k] * Ec(k, β, λdims) for k in 1:inst.p)
-  A = sum(E(j, λdims)' * ffnet.Ms[j][1:end, 1:end-1] * E(j, mdims) for j in 1:L)
-  B = sum(E(j, λdims)' * E(j+1, mdims) for j in 1:L)
+  T = sum(Ec(k, β, fdims)' * Ts[k] * Ec(k, β, fdims) for k in 1:inst.p)
+  A = sum(E(j, fdims)' * ffnet.Ms[j][1:end, 1:end-1] * E(j, edims) for j in 1:L)
+  B = sum(E(j, fdims)' * E(j+1, edims) for j in 1:L)
 
   simpleM1 = makeM1(T, A, B, ffnet)
   ρ = abs.(randn())
@@ -53,7 +53,7 @@ function testEquivMs(inst :: QueryInstance; verbose :: Bool = true)
     push!(Ys, Yk)
   end
 
-  decomposedM = sum(Ec(k, β+1, mdims)' * Ys[k] * Ec(k, β+1, mdims) for k in 1:inst.p)
+  decomposedM = sum(Ec(k, β+1, edims)' * Ys[k] * Ec(k, β+1, edims) for k in 1:inst.p)
 
   Mdiff = simpleM - decomposedM
   maxdiff = maximum(abs.(Mdiff))
@@ -65,23 +65,23 @@ end
 
 function testΩinv(inst :: QueryInstance; verbose :: Bool = true)
   ffnet = inst.net
-  mdims = ffnet.mdims
+  edims = ffnet.edims
   β = inst.β
   p = inst.p
 
   M1, M2 = testEquivMs(inst, verbose=false)
   M = M1 + M2
-  Ωinv = makeΩinv(β+1, mdims)
+  Ωinv = makeΩinv(β+1, edims)
   Mscaled = M .* Ωinv
 
   Zs = Vector{Any}()
   for k in 1:p
-    Ekβp1 = Ec(k, β+1, mdims)
-    Zk = Ekβp1 * Mscaled * Ekβp1'
+    Eck = Ec(k, β+1, edims)
+    Zk = Eck * Mscaled * Eck'
     push!(Zs, Zk)
   end
 
-  Mrecovered = sum(Ec(k, β+1, mdims)' * Zs[k] * Ec(k, β+1, mdims) for k in 1:p)
+  Mrecovered = sum(Ec(k, β+1, edims)' * Zs[k] * Ec(k, β+1, edims) for k in 1:p)
   Mdiff = M - Mrecovered
   maxdiff = maximum(abs.(Mdiff))
 
@@ -92,14 +92,14 @@ end
 # Test the make Zk functionality
 function testZPartitions(inst; verbose :: Bool = true)
   ffnet = inst.net
-  mdims = ffnet.mdims
-  λdims = ffnet.λdims
+  edims = ffnet.edims
+  fdims = ffnet.fdims
   L = ffnet.L
   β = inst.β
 
   Ts = Vector{Any}()
   for k in 1:inst.p
-    Λkdim = sum(λdims[k:k+β])
+    Λkdim = sum(fdims[k:k+β])
     Λk = Symmetric(abs.(randn(Λkdim, Λkdim)))
     Tk = makeT(Λkdim, Λk, inst.pattern)
     push!(Ts, Tk)
@@ -123,21 +123,21 @@ function testZPartitions(inst; verbose :: Bool = true)
     push!(Ys, Yk)
   end
 
-  Ωinv = makeΩinv(β+1, mdims)
+  Ωinv = makeΩinv(β+1, edims)
 
-  bigZ = zeros(sum(mdims), sum(mdims))
+  bigZ = zeros(sum(edims), sum(edims))
 
   for k in 1:inst.p
-    Eck = Ec(k, β+1, mdims)
+    Eck = Ec(k, β+1, edims)
     Ωkinv = Eck * Ωinv * Eck'
-    Zk = makeZ(k, β, Ys, Ωkinv, mdims)
+    Zk = makeZ(k, β, Ys, Ωkinv, edims)
     bigZ += Eck' * Zk * Eck
   end
 
   # Make Z using the M method
-  T = sum(Ec(k, β, λdims)' * Ts[k] * Ec(k, β, λdims) for k in 1:inst.p)
-  A = sum(E(j, λdims)' * ffnet.Ms[j][1:end, 1:end-1] * E(j, mdims) for j in 1:L)
-  B = sum(E(j, λdims)' * E(j+1, mdims) for j in 1:L)
+  T = sum(Ec(k, β, fdims)' * Ts[k] * Ec(k, β, fdims) for k in 1:inst.p)
+  A = sum(E(j, fdims)' * ffnet.Ms[j][1:end, 1:end-1] * E(j, edims) for j in 1:L)
+  B = sum(E(j, fdims)' * E(j+1, edims) for j in 1:L)
   M1 = makeM1(T, A, B, ffnet)
   M2 = makeM2(ρ, ffnet)
   M = M1 + M2
@@ -151,10 +151,10 @@ function testZPartitions(inst; verbose :: Bool = true)
 
 
   #=
-  Ec1 = Ec(1, β+1, mdims)
+  Ec1 = Ec(1, β+1, edims)
   Ω1inv = Ec1 * Ωinv * Ec1'
 
-  return SplitLipSdp.makeZ(1, β, Ys, Ω1inv, mdims)
+  return SplitLipSdp.makeZ(1, β, Ys, Ω1inv, edims)
   =#
  
   # return Ys, Ωinv
