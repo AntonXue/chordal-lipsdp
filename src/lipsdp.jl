@@ -30,19 +30,12 @@ function setupViaWholeT(model, inst :: QueryInstance, opts :: LipSdpOptions)
   L = ffnet.L
   β = inst.β
 
-  # Set up the T matrix as a sum
-  Ts = Vector{Any}()
-  for k in 1:inst.p
-    Λkdim = sum(fdims[k:k+β])
-    Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
-    @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
-    Tk = makeT(Λkdim, Λk, inst.pattern)
-    Fck = Ec(k, β, fdims)
-    push!(Ts, Fck' * Tk * Fck)
-  end
+  # Set up T
+  Λdim = sum(fdims)
+  Λ = @variable(model, [1:Λdim, 1:Λdim], Symmetric)
+  @constraint(model, Λ[1:Λdim, 1:Λdim] .>= 0)
+  T = makeT(Λdim, Λ, inst.pattern)
 
-  # Query M1
-  T = sum(Ts)
   A = sum(E(j, fdims)' * ffnet.Ms[j][1:end, 1:end-1] * E(j, edims) for j in 1:L)
   B = sum(E(j, fdims)' * E(j+1, edims) for j in 1:L)
   M1 = makeM1(T, A, B, ffnet)

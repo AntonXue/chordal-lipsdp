@@ -185,7 +185,7 @@ function makeΩinv(b :: Int, dims :: Vector{Int})
   return Ωinv
 end
 
-# Calculate the relevant partition tuples
+# Given a k and its band, calculate the tiling informatio
 function makeTilingInfo(k :: Int, b :: Int, dims :: Vector{Int})
   lendims = length(dims)
   @assert k >= 1 && b >= 0

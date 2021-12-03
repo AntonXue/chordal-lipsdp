@@ -15,13 +15,13 @@ struct SimpleSetup <: SetupMethod end
 struct YsFirstSetup <: SetupMethod end
 struct ζsFirstSetup <: SetupMethod end
 
-@with_kw struct SplitLipSdpOptions
+@with_kw struct SplitOptions
   setupMethod :: SetupMethod
   verbose :: Bool = false
 end
 
 #
-function setupViaSimple(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
+function setupViaSimple(model, inst :: QueryInstance, opts :: SplitOptions)
   setup_start_time = time()
 
   ffnet = inst.net
@@ -71,25 +71,6 @@ function setupViaSimple(model, inst :: QueryInstance, opts :: SplitLipSdpOptions
   return model, setup_time
 end
 
-# Make a Zk
-# Where ζk is a vector of [γ[k-β], ..., γ[k], ..., γ[k+b]]
-function makeZk(k :: Int, β :: Int, ζk, Ωkinv :: Matrix{Float64}, ffnet :: FeedForwardNetwork, pattern :: TPattern)
-  kdims, tups = makeTilingInfo(k, β+1, ffnet.edims)
-  @assert length(tups) == length(ζk)
-  Zktiles = Vector{Any}()
-  # i is the index to access the γs, j is the relative offset from k
-  for (i, (j, (slicelow, slicehigh), (insertlow, inserthigh), jdims)) in enumerate(tups)
-    γi = ζk[i]
-    Yi = makeYk(i, β, γi, ffnet, pattern)
-    Eslice = vcat([E(l, jdims) for l in slicelow:slicehigh]...)
-    Eins = vcat([E(l, kdims) for l in insertlow:inserthigh]...)
-    slicedYi = Eslice * Yi * Eslice'
-    push!(Zktiles, Eins' * slicedYi * Eins)
-  end
-
-  Zk = sum(Zktiles) .* Ωkinv
-  return Zk
-end
 
 # Make each Zk, albeit probably inefficiently
 function makeZkviaYs(k :: Int, β :: Int, Ys :: Vector{Any}, Ωkinv :: Matrix{Float64}, edims :: Vector{Int})
@@ -111,7 +92,7 @@ function makeZkviaYs(k :: Int, β :: Int, Ys :: Vector{Any}, Ωkinv :: Matrix{Fl
 end
 
 # Another setup method
-function setupViaYsFirst(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
+function setupViaYsFirst(model, inst :: QueryInstance, opts :: SplitOptions)
   setup_start_time = time()
   ffnet = inst.net
   edims = ffnet.edims
@@ -157,8 +138,30 @@ function setupViaYsFirst(model, inst :: QueryInstance, opts :: SplitLipSdpOption
   return model, setup_time
 end
 
+
+# Make a Zk
+# Where ζk is a vector of [γ[k-β], ..., γ[k], ..., γ[k+b]]
+function makeZk(k :: Int, β :: Int, ζk, Ωkinv :: Matrix{Float64}, ffnet :: FeedForwardNetwork, pattern :: TPattern)
+  kdims, tups = makeTilingInfo(k, β+1, ffnet.edims)
+  
+  @assert length(tups) == length(ζk)
+  Zktiles = Vector{Any}()
+  # Use ζs[i] to create the Y[k+j] slice
+  for (i, (j, (slicelow, slicehigh), (insertlow, inserthigh), jdims)) in enumerate(tups)
+    γi = ζk[i]
+    Yi = makeYk(k+j, β, γi, ffnet, pattern)
+    Eslice = vcat([E(l, jdims) for l in slicelow:slicehigh]...)
+    Eins = vcat([E(l, kdims) for l in insertlow:inserthigh]...)
+    slicedYi = Eslice * Yi * Eslice'
+    push!(Zktiles, Eins' * slicedYi * Eins)
+  end
+
+  Zk = sum(Zktiles) .* Ωkinv
+  return Zk
+end
+
 #
-function setupViaζsFirst(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
+function setupViaζsFirst(model, inst :: QueryInstance, opts :: SplitOptions)
   setup_start_time = time()
   ffnet = inst.net
   edims = ffnet.edims
@@ -181,8 +184,9 @@ function setupViaζsFirst(model, inst :: QueryInstance, opts :: SplitLipSdpOptio
   Ωinv = makeΩinv(β+1, edims)
 
   for k in 1:p
-    kinds = Hcinds(k, β, γdims)
-    ζk = [E(i, γdims) * γ for i in kinds]
+    overlappedYinds = Hcinds(k, β+1, γdims)
+    ζk = [E(i, γdims) * γ for i in overlappedYinds]
+
     Eck = Ec(k, β+1, edims)
     Ωkinv = Eck * Ωinv * Eck'
     Zk = makeZk(k, β, ζk, Ωkinv, ffnet, inst.pattern)
@@ -196,7 +200,7 @@ function setupViaζsFirst(model, inst :: QueryInstance, opts :: SplitLipSdpOptio
 end
 
 # Depending on the options, call the appropriate setup function
-function setup(inst :: QueryInstance, opts :: SplitLipSdpOptions)
+function setup(inst :: QueryInstance, opts :: SplitOptions)
   model = Model(optimizer_with_attributes(
     Mosek.Optimizer,
     "QUIET" => true,
@@ -214,13 +218,13 @@ function setup(inst :: QueryInstance, opts :: SplitLipSdpOptions)
 end
 
 # Run the query and return the solution summary
-function solve!(model, opts :: SplitLipSdpOptions)
+function solve!(model, opts :: SplitOptions)
   optimize!(model)
   return solution_summary(model)
 end
 
 # The interface to call
-function run(inst :: QueryInstance, opts :: SplitLipSdpOptions)
+function run(inst :: QueryInstance, opts :: SplitOptions)
   run_start_time = time()
   model, setup_time = setup(inst, opts)
   summary = solve!(model, opts)
@@ -237,7 +241,7 @@ function run(inst :: QueryInstance, opts :: SplitLipSdpOptions)
   return output
 end
 
-export SplitLipSdpOptions
+export SplitOptions
 export run
 export makeZ
 

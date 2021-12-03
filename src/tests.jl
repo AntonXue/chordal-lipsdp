@@ -130,7 +130,7 @@ function testZPartitions(inst; verbose :: Bool = true)
   for k in 1:inst.p
     Eck = Ec(k, β+1, edims)
     Ωkinv = Eck * Ωinv * Eck'
-    Zk = makeZ(k, β, Ys, Ωkinv, edims)
+    Zk = SplitLipSdp.makeZkviaYs(k, β, Ys, Ωkinv, edims)
     bigZ += Eck' * Zk * Eck
   end
 
@@ -148,16 +148,69 @@ function testZPartitions(inst; verbose :: Bool = true)
 
   if verbose; println("maxdiff: " * string(maxdiff)) end
   @assert maxdiff <= 1e-13
+end
 
 
-  #=
-  Ec1 = Ec(1, β+1, edims)
-  Ω1inv = Ec1 * Ωinv * Ec1'
+# Test the tiling
+function testTiling(inst :: QueryInstance; verbose :: Bool = true)
+  ffnet = inst.net
+  edims = ffnet.edims
+  fdims = ffnet.fdims
+  L = ffnet.L
+  β = inst.β
+  p = inst.p
 
-  return SplitLipSdp.makeZ(1, β, Ys, Ω1inv, edims)
-  =#
- 
-  # return Ys, Ωinv
+  γdims = Vector{Int}()
+  Λs = Vector{Any}()
+  Ts = Vector{Any}()
+  γs = Vector{Vector{Float64}}()
+  for k in 1:p
+    Λkdim = sum(fdims[k:k+β])
+    γkdim = Λkdim^2
+    if k == 1; γkdim += 1 end
+    push!(γdims, γkdim)
+
+    Λk = abs.(Symmetric(randn(Λkdim, Λkdim)))
+    push!(Λs, Λk)
+
+    γk = vec(Λk)
+    push!(γs, γk)
+
+    Tk = makeT(Λkdim, Λk, inst.pattern)
+    push!(Ts, Tk)
+  end
+
+  # Form the complicated way
+  ρ = abs(randn())
+  γ = vcat(γs...)
+  γ = [ρ; γ]
+  Ωinv = makeΩinv(β+1, edims)
+
+  bigZ = zeros(sum(edims), sum(edims))
+  for k in 1:p
+    overlappedYinds = Hcinds(k, β+1, γdims)
+
+    ζk = [E(i, γdims) * γ for i in overlappedYinds]
+    Eck = Ec(k, β+1, edims)
+    Ωkinv = Eck * Ωinv * Eck'
+    Zk = SplitLipSdp.makeZk(k, β, ζk, Ωkinv, ffnet, inst.pattern)
+    bigZ += Eck' * Zk * Eck
+  end
+
+  # Make Z using the M method
+  T = sum(Ec(k, β, fdims)' * Ts[k] * Ec(k, β, fdims) for k in 1:inst.p)
+  A = sum(E(j, fdims)' * ffnet.Ms[j][1:end, 1:end-1] * E(j, edims) for j in 1:L)
+  B = sum(E(j, fdims)' * E(j+1, edims) for j in 1:L)
+  M1 = makeM1(T, A, B, ffnet)
+  M2 = makeM2(ρ, ffnet)
+  M = M1 + M2
+
+  #
+  Mdiff = M - bigZ
+  maxdiff = maximum(abs.(Mdiff))
+
+  if verbose; println("maxdiff: " * string(maxdiff)) end
+  @assert maxdiff <= 1e-13
 end
 
 end # End module
