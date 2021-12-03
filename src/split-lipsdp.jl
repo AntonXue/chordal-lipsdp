@@ -20,12 +20,8 @@ struct ΓSetup <: SetupMethod end
 end
 
 #
-function setupViaSimple(inst :: QueryInstance, opts :: SplitLipSdpOptions)
+function setupViaSimple(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
   setup_start_time = time()
-  model = Model(optimizer_with_attributes(
-    Mosek.Optimizer,
-    "QUIET" => true,
-    "INTPNT_CO_TOL_DFEAS" => 1e-6))
 
   ffnet = inst.net
   mdims = ffnet.mdims
@@ -75,49 +71,90 @@ function setupViaSimple(inst :: QueryInstance, opts :: SplitLipSdpOptions)
 end
 
 # Make each Zk, albeit probably inefficiently
-function makeZ(k :: Int, ζk, γdims :: Vector{Int}, inst :: QueryInstance)
-  β = inst.β
-  kdims, tups = makePartitionTuples(k, β, γdims)
-  lentup = length(tups)
+# function makeZ(k :: Int, β :: Int, γ, γdims :: Vector{Int}, mdims)
+function makeZ(k :: Int, β :: Int, Ys :: Vector{Any}, Ωkinv :: Matrix{Float64}, mdims :: Vector{Int})
+  @assert 1 <= k <= length(mdims)
 
-  Xs = Vector{Any}()
+  Zk = Ys[k]
+  kdims, tups = makePartitionTuples(k, β+1, mdims)
+  for (j, (slicelow, slicehigh), (inslow, inshigh), jdims) in tups
+    if j == 0; continue end
+
+    Eslice = vcat([E(i, jdims) for i in slicelow:slicehigh]...)
+    
+    # println("Ys[" * string(k+j) * "]: " * string(size(Ys[k+j])))
+    # println("Eslice size: " * string(size(Eslice)))
+
+    slicedY = Eslice * Ys[k+j] * Eslice'
+
+    # println("slicedY size: " * string(size(slicedY)))
+    Eins = vcat([E(i, kdims) for i in inslow:inshigh]...)
+    # println("Eins size: " * string(size(Eins)))
+    Zk += Eins' * slicedY * Eins
+  end
+
+  Zk = Zk .* Ωkinv
+  return Zk
 end
 
 # Another setup method
-function setupViaΓ(inst :: QueryInstance, opts :: SplitLipSdpOptions)
-  #=
+function setupViaΓ(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
   setup_start_time = time()
-  model = Model(optimizer_with_attributes(
-    Mosek.Optimizer,
-    "QUIET" => true,
-    "INTPNT_CO_TOL_DFEAS" => 1e-6))
-
   ffnet = inst.net
   mdims = ffnet.mdims
   λdims = ffnet.λdims
   L = ffnet.L
   β = inst.β
-  p = inst.p
 
-
-  γdims = Vector{Int}(zeros(L))
-  @variable(model, γ[1:sum(γdims)] >= 0)
-  for k in 1:L
-    ζk = Hc(k, γdims) * γ
-    Zk = makeZ(k, ζk, γdims, ...)
-    @SDconstraint(model, Zk <= 0)
+  Xs = Vector{Any}()
+  for k in 1:inst.p
+    Λkdim = sum(λdims[k:k+β])
+    Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
+    @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
+    Tk = makeT(Λkdim, Λk, inst.pattern)
+    Xk = makeX(k, β, Tk, ffnet)
+    push!(Xs, Xk)
   end
 
-  return model
-  =#
+  ρ = @variable(model)
+  @constraint(model, ρ >= 0)
+  Xinit = makeXinit(β, ρ, ffnet)
+  Xfinal = makeXfinal(β, ffnet)
+
+  Ys = Vector{Any}()
+  for k in 1:inst.p
+    Yk = Xs[k]
+    if k == 1; Yk += Xinit end
+    if k == inst.p; Yk += Xfinal end
+    push!(Ys, Yk)
+  end
+
+  Ωinv = makeΩinv(β+1, mdims)
+
+  for k in 1:inst.p
+    Eck = Ec(k, β+1, mdims)
+    Ωkinv = Eck * Ωinv * Eck'
+    Zk = makeZ(k, β, Ys, Ωkinv, mdims)
+    @SDconstraint(model, Zk <= 0)
+  end
+  
+  # Set up objective and return
+  @objective(model, Min, ρ)
+  setup_time = time() - setup_start_time
+  return model, setup_time
 end
 
 # Depending on the options, call the appropriate setup function
 function setup(inst :: QueryInstance, opts :: SplitLipSdpOptions)
+  model = Model(optimizer_with_attributes(
+    Mosek.Optimizer,
+    "QUIET" => true,
+    "INTPNT_CO_TOL_DFEAS" => 1e-6))
+
   if opts.setupMethod isa SimpleSetup
-    return setupViaSimple(inst, opts)
+    return setupViaSimple(model, inst, opts)
   elseif opts.setupMethod isa ΓSetup
-    return setupViaΓ(inst, opts)
+    return setupViaΓ(model, inst, opts)
   else
     error("unsupported setup method: " * string(opts.setupMethod))
   end

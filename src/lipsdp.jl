@@ -21,12 +21,8 @@ struct ScaledZSetup <: SetupMethod end
 end
 
 # Compute all of T then query M1
-function setupViaWholeT(inst :: QueryInstance, opts :: LipSdpOptions)
+function setupViaWholeT(model, inst :: QueryInstance, opts :: LipSdpOptions)
   setup_start_time = time()
-  model = Model(optimizer_with_attributes(
-    Mosek.Optimizer,
-    "QUIET" => true,
-    "INTPNT_CO_TOL_DFEAS" => 1e-6))
 
   ffnet = inst.net
   mdims = ffnet.mdims
@@ -66,12 +62,8 @@ function setupViaWholeT(inst :: QueryInstance, opts :: LipSdpOptions)
 end
 
 #
-function setupViaSummedX(inst :: QueryInstance, opts :: LipSdpOptions)
+function setupViaSummedX(model, inst :: QueryInstance, opts :: LipSdpOptions)
   setup_start_time = time()
-  model = Model(optimizer_with_attributes(
-    Mosek.Optimizer,
-    "QUIET" => true,
-    "INTPNT_CO_TOL_DFEAS" => 1e-6))
 
   ffnet = inst.net
   mdims = ffnet.mdims
@@ -112,12 +104,8 @@ function setupViaSummedX(inst :: QueryInstance, opts :: LipSdpOptions)
   return model, setup_time
 end
 
-function setupViaScaledZ(inst :: QueryInstance, opts :: LipSdpOptions)
+function setupViaScaledZ(model, inst :: QueryInstance, opts :: LipSdpOptions)
   setup_start_time = time()
-  model = Model(optimizer_with_attributes(
-    Mosek.Optimizer,
-    "QUIET" => true,
-    "INTPNT_CO_TOL_DFEAS" => 1e-6))
 
   ffnet = inst.net
   mdims = ffnet.mdims
@@ -170,12 +158,17 @@ end
 
 # Depending on the set up options we call different things
 function setup(inst :: QueryInstance, opts :: LipSdpOptions)
+  model = Model(optimizer_with_attributes(
+    Mosek.Optimizer,
+    "QUIET" => true,
+    "INTPNT_CO_TOL_DFEAS" => 1e-6))
+
   if opts.setupMethod isa WholeTSetup
-    return setupViaWholeT(inst, opts)
+    return setupViaWholeT(model, inst, opts)
   elseif opts.setupMethod isa SummedXSetup
-    return setupViaSummedX(inst, opts)
+    return setupViaSummedX(model, inst, opts)
   elseif opts.setupMethod isa ScaledZSetup
-    return setupViaScaledZ(inst, opts)
+    return setupViaScaledZ(model, inst, opts)
   else
     error("unsupported setup method: " * string(opts.setupMethod))
   end

@@ -31,6 +31,15 @@ function Ec(k :: Int, β :: Int, dims :: Vector{Int})
   return vcat(Ejs...)
 end
 
+# Block index matrix for k-band to k+band blocks
+function Hc(k :: Int, β :: Int, dims :: Vector{Int})
+  lendims = length(dims)
+  @assert k >= 1 && β >= 0
+  @assert 1 <= k <= lendims
+  Ejs = [E(k+j, dims) for j in -β:β if 1 <= k+j <= lendims]
+  return vcat(Ejs...)
+end
+
 # Get the A(k, β) slice
 function makeAc(k :: Int, β :: Int, ffnet :: FeedForwardNetwork)
   @assert k >= 1 && β >= 0
@@ -119,6 +128,42 @@ function makeT(Λdim :: Int, Λ, pattern :: TPattern)
   end
 end
 
+# Make the Ys
+function makeY(k :: Int, β :: Int, γk, ffnet :: FeedForwardNetwork, pattern :: TPattern)
+  @assert 1 <= k <= ffnet.L
+  # Make the Xk first
+  if k == 1
+    γ1 = γk[2:end]
+    Λdim = Int(round(sqrt(length(γ1))))
+    @assert length(γ1) == Λdim^2
+    Λ = reshape(γ1, (Λdim, Λdim))
+  else
+    Λdim = Int(round(sqrt(length(γk))))
+    @assert length(γk) == Λdim^2
+    Λ = reshape(γk, (Λdim, Λdim))
+  end
+  Tk = makeT(Λdim, Λ, pattern)
+  Xk = makeX(k, β, Tk, ffnet)
+
+  # Then check to see if we should add the Xinit
+  if k == 1
+    ρ = γk[1]
+    Xinit = makeXinit(β, ρ, ffnet)
+    Xk += Xinit
+  end
+
+  # ... and the Xfinal in a separate condition in case p == 1
+  if k + β == ffnet.L
+    Xfinal = makeXfinal(β, ffnet)
+    Xk += Xfinal
+  end
+
+  return Xk
+end
+
+
+
+
 # Overlap counter
 function makeΩ(band :: Int, dims :: Vector{Int})
   p = length(dims) - band
@@ -141,10 +186,6 @@ function makeΩinv(band :: Int, dims :: Vector{Int})
   return Ωinv
 end
 
-# Selectors for γ
-function Hc(k :: Int, band :: Int, j :: Int, γdims :: Vector{Int})
-end
-
 # Calculate the relevant partition tuples
 function makePartitionTuples(k :: Int, band :: Int, dims :: Vector{Int})
   lendims = length(dims)
@@ -159,12 +200,14 @@ function makePartitionTuples(k :: Int, band :: Int, dims :: Vector{Int})
       # The low/high slices of jdims
       slicelow = (j > 0) ? 1 : 1-j
       slicehigh = (j > 0) ? band+1-j : band+1
+      jslice = (slicelow, slicehigh)
 
       # The insertion places within the kdim block
       inslow = (j > 0) ? 1+j : 1
       inshigh = (j > 0) ? band+1 : band+1+j
+      jins = (inslow, inshigh)
       # println("at j: " * string(j) * ", slices: " * string((slicelow, slicehigh)) * ", ins: " * string((inslow, inshigh)) * ", jdims: " * string(jdims))
-      push!(jtups, (j, slicelow, slicehigh, inslow, inshigh))
+      push!(jtups, (j, jslice, jins, jdims))
     end
   end
 
@@ -196,7 +239,7 @@ function makeM2(ρ, ffnet :: FeedForwardNetwork)
 end
 
 #
-export e, E, Ec
+export e, E, Ec, Hc
 export makeT, makeBandedT
 export makeAc, makeX, makeXinit, makeXfinal
 export makeΩ, makeΩinv
