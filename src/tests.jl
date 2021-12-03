@@ -38,7 +38,7 @@ function testEquivMs(inst :: QueryInstance; verbose :: Bool = true)
   # Now make the decomposed version
   Xs = Vector{Any}()
   for k in 1:inst.p
-    Xk = makeX(k, β, Ts[k], ffnet)
+    Xk = makeXk(k, β, Ts[k], ffnet)
     push!(Xs, Xk)
   end
 
@@ -107,7 +107,7 @@ function testZPartitions(inst; verbose :: Bool = true)
 
   Xs = Vector{Any}()
   for k in 1:inst.p
-    Xk = makeX(k, β, Ts[k], ffnet)
+    Xk = makeXk(k, β, Ts[k], ffnet)
     push!(Xs, Xk)
   end
 

@@ -77,7 +77,7 @@ function setupViaSummedX(model, inst :: QueryInstance, opts :: LipSdpOptions)
     Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
     @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
     Tk = makeT(Λkdim, Λk, inst.pattern)
-    Xk = makeX(k, β, Tk, ffnet)
+    Xk = makeXk(k, β, Tk, ffnet)
     push!(Xs, Xk)
   end
 
@@ -120,7 +120,7 @@ function setupViaScaledZ(model, inst :: QueryInstance, opts :: LipSdpOptions)
     Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
     @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
     Tk = makeT(Λkdim, Λk, inst.pattern)
-    Xk = makeX(k, β, Tk, ffnet)
+    Xk = makeXk(k, β, Tk, ffnet)
     push!(Xs, Xk)
   end
 

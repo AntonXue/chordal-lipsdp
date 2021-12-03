@@ -42,8 +42,16 @@ function Hc(k :: Int, r :: Int, dims :: Vector{Int})
   return vcat(Ejs...)
 end
 
+# The indices relevant to Hc
+function Hcinds(k :: Int, r :: Int, dims :: Vector{Int})
+  lendims = length(dims)
+  @assert k >= 1 && r >= 0
+  @assert 1 <= k <= lendims
+  return [k+j for j in -r:r if 1 <= k+j <= lendims]
+end
+
 # Construct blockdiag(W[k], ..., W[k+β]) by summing Fk' * Wk * Ek
-function makeAc(k :: Int, β :: Int, ffnet :: FeedForwardNetwork)
+function makeAck(k :: Int, β :: Int, ffnet :: FeedForwardNetwork)
   @assert k >= 1 && β >= 0
   @assert 1 <= k + β <= ffnet.L
   eds = ffnet.edims[k:(k+β)]
@@ -53,7 +61,7 @@ function makeAc(k :: Int, β :: Int, ffnet :: FeedForwardNetwork)
 end
 
 # Construct the X
-function makeX(k :: Int, β :: Int, Tk, ffnet :: FeedForwardNetwork)
+function makeXk(k :: Int, β :: Int, Tk, ffnet :: FeedForwardNetwork)
   @assert ffnet.nettype isa ReluNetwork or ffnet.nettype isa TanhNetwork
   @assert k >= 1 && β >= 0
   @assert 1 <= k + β <= ffnet.L
@@ -64,7 +72,7 @@ function makeX(k :: Int, β :: Int, Tk, ffnet :: FeedForwardNetwork)
 
   # Generate the individual in the overlapping block matrix
   seclow, sechigh = 0, 1
-  Ack = makeAc(k, β, ffnet)
+  Ack = makeAck(k, β, ffnet)
   _R11 = -2 * seclow * sechigh * Ack' * Tk * Ack
   _R12 = (seclow + sechigh) * Ack' * Tk
   _R22 = -2 * Tk
@@ -131,7 +139,7 @@ function makeT(Λdim :: Int, Λ, pattern :: TPattern)
 end
 
 # Make the Ys
-function makeY(k :: Int, β :: Int, γk, ffnet :: FeedForwardNetwork, pattern :: TPattern)
+function makeYk(k :: Int, β :: Int, γk, ffnet :: FeedForwardNetwork, pattern :: TPattern)
   @assert 1 <= k <= ffnet.L
   # Make the Xk first
   if k == 1
@@ -145,7 +153,7 @@ function makeY(k :: Int, β :: Int, γk, ffnet :: FeedForwardNetwork, pattern ::
     Λ = reshape(γk, (Λdim, Λdim))
   end
   Tk = makeT(Λdim, Λ, pattern)
-  Xk = makeX(k, β, Tk, ffnet)
+  Xk = makeXk(k, β, Tk, ffnet)
 
   # Then check to see if we should add the Xinit
   if k == 1; Xk += makeXinit(β, γk[1], ffnet) end
@@ -230,9 +238,10 @@ function makeM2(ρ, ffnet :: FeedForwardNetwork)
 end
 
 #
-export e, E, Ec, Hc
+export e, E, Ec, Hc, Hcinds
 export makeT, makeBandedT
-export makeAc, makeX, makeXinit, makeXfinal
+export makeAck, makeXk, makeXinit, makeXfinal
+export makeYk
 export makeΩ, makeΩinv
 export makeM1, makeM2
 export makeTilingInfo

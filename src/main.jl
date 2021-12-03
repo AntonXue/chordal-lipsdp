@@ -30,35 +30,40 @@ reginst = QueryInstance(net=ffnet, β=1, pattern=OnePerNeuronPattern())
 splitinst = QueryInstance(net=ffnet, β=4, pattern=BandedPattern(band=8))
 
 #
-SimpleTopts = LipSdpOptions(setupMethod=LipSdp.WholeTSetup()) 
-SimpleXopts = LipSdpOptions(setupMethod=LipSdp.SummedXSetup())
-SimpleZopts = LipSdpOptions(setupMethod=LipSdp.ScaledZSetup())
 
+#=
+SimpleTopts = LipSdpOptions(setupMethod=LipSdp.WholeTSetup()) 
 solnT = LipSdp.run(reginst, SimpleTopts)
 println("solnT: " * string(solnT))
 println("")
 
+SimpleXopts = LipSdpOptions(setupMethod=LipSdp.SummedXSetup())
 solnX = LipSdp.run(reginst, SimpleXopts)
 println("solnX: " * string(solnX))
 println("")
 
+SimpleZopts = LipSdpOptions(setupMethod=LipSdp.ScaledZSetup())
 solnZ = LipSdp.run(reginst, SimpleZopts)
 println("solnZ: " * string(solnZ))
 println("")
+=#
 
 #
 
 SplitSopts = SplitLipSdpOptions(setupMethod=SplitLipSdp.SimpleSetup())
-SplitZopts = SplitLipSdpOptions(setupMethod=SplitLipSdp.ΓSetup())
-
 splitSolnS = SplitLipSdp.run(splitinst, SplitSopts)
 println("splitSolnS: " * string(splitSolnS))
 println("")
 
-splitSolnZ = SplitLipSdp.run(splitinst, SplitZopts)
-println("splitSolnZ: " * string(splitSolnZ))
+SplitYopts = SplitLipSdpOptions(setupMethod=SplitLipSdp.YsFirstSetup())
+splitSolnY = SplitLipSdp.run(splitinst, SplitYopts)
+println("splitSolnY: " * string(splitSolnY))
 println("")
 
+Splitζopts = SplitLipSdpOptions(setupMethod=SplitLipSdp.ζsFirstSetup())
+splitSolnζ = SplitLipSdp.run(splitinst, Splitζopts)
+println("splitSolnζ: " * string(splitSolnζ))
+println("")
 
 
 #=

@@ -12,7 +12,8 @@ using Mosek
 # How the construction is done
 abstract type SetupMethod end
 struct SimpleSetup <: SetupMethod end
-struct ΓSetup <: SetupMethod end
+struct YsFirstSetup <: SetupMethod end
+struct ζsFirstSetup <: SetupMethod end
 
 @with_kw struct SplitLipSdpOptions
   setupMethod :: SetupMethod
@@ -36,7 +37,7 @@ function setupViaSimple(model, inst :: QueryInstance, opts :: SplitLipSdpOptions
     Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
     @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
     Tk = makeT(Λkdim, Λk, inst.pattern)
-    Xk = makeX(k, β, Tk, ffnet)
+    Xk = makeXk(k, β, Tk, ffnet)
     push!(Xs, Xk)
   end
 
@@ -70,9 +71,28 @@ function setupViaSimple(model, inst :: QueryInstance, opts :: SplitLipSdpOptions
   return model, setup_time
 end
 
+# Make a Zk
+# Where ζk is a vector of [γ[k-β], ..., γ[k], ..., γ[k+b]]
+function makeZk(k :: Int, β :: Int, ζk, Ωkinv :: Matrix{Float64}, ffnet :: FeedForwardNetwork, pattern :: TPattern)
+  kdims, tups = makeTilingInfo(k, β+1, ffnet.edims)
+  @assert length(tups) == length(ζk)
+  Zktiles = Vector{Any}()
+  # i is the index to access the γs, j is the relative offset from k
+  for (i, (j, (slicelow, slicehigh), (insertlow, inserthigh), jdims)) in enumerate(tups)
+    γi = ζk[i]
+    Yi = makeYk(i, β, γi, ffnet, pattern)
+    Eslice = vcat([E(l, jdims) for l in slicelow:slicehigh]...)
+    Eins = vcat([E(l, kdims) for l in insertlow:inserthigh]...)
+    slicedYi = Eslice * Yi * Eslice'
+    push!(Zktiles, Eins' * slicedYi * Eins)
+  end
+
+  Zk = sum(Zktiles) .* Ωkinv
+  return Zk
+end
+
 # Make each Zk, albeit probably inefficiently
-# function makeZ(k :: Int, β :: Int, γ, γdims :: Vector{Int}, edims)
-function makeZ(k :: Int, β :: Int, Ys :: Vector{Any}, Ωkinv :: Matrix{Float64}, edims :: Vector{Int})
+function makeZkviaYs(k :: Int, β :: Int, Ys :: Vector{Any}, Ωkinv :: Matrix{Float64}, edims :: Vector{Int})
   @assert 1 <= k <= length(edims)
 
   Zk = Ys[k]
@@ -91,7 +111,7 @@ function makeZ(k :: Int, β :: Int, Ys :: Vector{Any}, Ωkinv :: Matrix{Float64}
 end
 
 # Another setup method
-function setupViaΓ(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
+function setupViaYsFirst(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
   setup_start_time = time()
   ffnet = inst.net
   edims = ffnet.edims
@@ -105,7 +125,7 @@ function setupViaΓ(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
     Λk = @variable(model, [1:Λkdim, 1:Λkdim], Symmetric)
     @constraint(model, Λk[1:Λkdim, 1:Λkdim] .>= 0)
     Tk = makeT(Λkdim, Λk, inst.pattern)
-    Xk = makeX(k, β, Tk, ffnet)
+    Xk = makeXk(k, β, Tk, ffnet)
     push!(Xs, Xk)
   end
 
@@ -127,12 +147,50 @@ function setupViaΓ(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
   for k in 1:inst.p
     Eck = Ec(k, β+1, edims)
     Ωkinv = Eck * Ωinv * Eck'
-    Zk = makeZ(k, β, Ys, Ωkinv, edims)
+    Zk = makeZkviaYs(k, β, Ys, Ωkinv, edims)
     @SDconstraint(model, Zk <= 0)
   end
   
   # Set up objective and return
   @objective(model, Min, ρ)
+  setup_time = time() - setup_start_time
+  return model, setup_time
+end
+
+#
+function setupViaζsFirst(model, inst :: QueryInstance, opts :: SplitLipSdpOptions)
+  setup_start_time = time()
+  ffnet = inst.net
+  edims = ffnet.edims
+  fdims = ffnet.fdims
+  L = ffnet.L
+  β = inst.β
+  p = inst.p
+
+  γdims = Vector{Int}(zeros(p))
+  for k in 1:p
+    Λkdim = sum(fdims[k:k+β])
+    γkdim = Λkdim^2
+    if k == 1; γkdim += 1 end # To account for the ρ at γ1
+    γdims[k] = γkdim
+  end
+
+  γ = @variable(model, [1:sum(γdims)])
+  @constraint(model, γ[1:sum(γdims)] .>= 0)
+
+  Ωinv = makeΩinv(β+1, edims)
+
+  for k in 1:p
+    kinds = Hcinds(k, β, γdims)
+    ζk = [E(i, γdims) * γ for i in kinds]
+    Eck = Ec(k, β+1, edims)
+    Ωkinv = Eck * Ωinv * Eck'
+    Zk = makeZk(k, β, ζk, Ωkinv, ffnet, inst.pattern)
+    @SDconstraint(model, Zk <= 0)
+  end
+
+  # Set up objective and return
+  @objective(model, Min, γ[1]) # ρ = γ[1]
   setup_time = time() - setup_start_time
   return model, setup_time
 end
@@ -146,8 +204,10 @@ function setup(inst :: QueryInstance, opts :: SplitLipSdpOptions)
 
   if opts.setupMethod isa SimpleSetup
     return setupViaSimple(model, inst, opts)
-  elseif opts.setupMethod isa ΓSetup
-    return setupViaΓ(model, inst, opts)
+  elseif opts.setupMethod isa YsFirstSetup
+    return setupViaYsFirst(model, inst, opts)
+  elseif opts.setupMethod isa ζsFirstSetup
+    return setupViaζsFirst(model, inst, opts)
   else
     error("unsupported setup method: " * string(opts.setupMethod))
   end
