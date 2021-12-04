@@ -17,8 +17,8 @@ Random.seed!(1234)
 
 #
 # xdims = [1;1;1;1;1;1;1;1;1;1]
-# xdims = [2;3;4;3;4]
-xdims = [2;3;4;5;6;7;6;5;4;3;2]
+xdims = [2;3;4;3;4]
+# xdims = [2;3;4;5;6;7;6;5;4;3;2]
 # xdims = [2; 20; 20; 20; 20; 20; 20; 2]
 # xdims = [2; 10; 10; 10; 10; 10; 10; 10; 10; 10; 10; 10; 2]
 # xdims = [2; 20; 20; 20; 20; 20; 20; 2]
@@ -27,17 +27,17 @@ fdims = edims[2:end]
 
 ffnet = randomNetwork(xdims, σ=0.5)
 
-reginst = QueryInstance(net=ffnet, β=1, pattern=OnePerNeuronPattern())
-
-
 # Simple testing
 
 #=
+reginst = QueryInstance(net=ffnet, β=0, pattern=OnePerNeuronPattern())
 SimpleTopts = LipSdpOptions(setupMethod=LipSdp.WholeTSetup()) 
 solnT = LipSdp.run(reginst, SimpleTopts)
 println("solnT: " * string(solnT))
 println("")
+=#
 
+#=
 SimpleXopts = LipSdpOptions(setupMethod=LipSdp.SummedXSetup())
 solnX = LipSdp.run(reginst, SimpleXopts)
 println("solnX: " * string(solnX))
@@ -70,11 +70,12 @@ println("splitSolnζ: " * string(splitSolnζ))
 println("")
 =#
 
+
 # ADMM testing
 
 
-admminst = QueryInstance(net=ffnet, β=1, pattern=BandedPattern(band=2))
-admmopts = AdmmOptions(verbose=true)
+admminst = QueryInstance(net=ffnet, β=2, pattern=BandedPattern(band=2))
+admmopts = AdmmOptions(max_iters=100, α=3, verbose=true)
 params = initParams(admminst, admmopts)
 
 cache = precompute(params, admminst, admmopts)
@@ -83,5 +84,14 @@ println("\n\n\n")
 
 admmsoln = AdmmLipSdp.run(admminst, admmopts)
 
+println("admm soln")
+println(admmsoln)
+
+println("")
+
+# For sanity
+SplitSopts = SplitOptions(setupMethod=SplitLipSdp.SimpleSetup())
+splitSolnS = SplitLipSdp.run(admminst, SplitSopts)
+println("splitSolnS: " * string(splitSolnS))
 
 

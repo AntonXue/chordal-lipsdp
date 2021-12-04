@@ -121,6 +121,7 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
 
     yk_time = round.(time() - yk_start_time, digits=2)
     if opts.verbose; println("precompute: Yss[" * string(k) * "/" * string(p) * "], time: " * string(yk_time)) end
+
   end
 
   Js = Vector{Any}()
@@ -202,7 +203,7 @@ end
 function stepγ(params :: AdmmParams, cache :: AdmmCache)
   # TODO: optimize
   tmp = [Hc(k, params.β+1, params.γdims)' * (params.ζs[k] + (params.μs[k] / params.α)) for k in 1:params.p]
-  tmp = sum(tmp) .* cache.Dinv
+  tmp = cache.Dinv .* sum(tmp)
   return projectΓ(tmp)
 end
 
@@ -225,8 +226,10 @@ end
 
 # The ρ step
 function stepρ(params :: AdmmParams, cache :: AdmmCache)
-  tmp = params.ρ - params.γ[1] + (params.η / params.α)
-  tmp = -1 / tmp
+  # tmp = params.ρ - params.γ[1] + (params.η / params.α)
+  # tmp = -1 / tmp
+  tmp = (params.α * params.γ[1]) - params.η - 1
+  tmp = tmp / params.α
   return tmp
 end
 
@@ -307,7 +310,6 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
 
     xstart_time = time()
     new_γ, new_vs = stepX(iter_params, cache)
-    # new_γ, new_vs = stepXNewton(iter_params, cache)
     iter_params.γ = new_γ
     iter_params.vs = new_vs
     xtotal_time = time() - xstart_time
@@ -331,7 +333,7 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
     all_times = round.((xtotal_time, ytotal_time, ztotal_time, step_total_time, total_time), digits=2)
     if opts.verbose; println("step[" * string(t) * "/" * string(opts.max_iters) * "]" * " time: " * string(all_times)) end
 
-    println("\tρ: " * string(new_ρ))
+    # println("\tρ: " * string(new_ρ))
 
     iters_run = t
 
@@ -340,6 +342,66 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
       break
     end
     =#
+
+    # Begin dump space
+    #=
+    println("γ:")
+    display(round.(iter_params.γ, digits=3))
+    println("\n")
+    =#
+
+    #=
+  
+    println("")
+    γdims = iter_params.γdims
+    for k in 1:iter_params.p
+      γk = round.(E(1, γdims) * iter_params.γ, digits=3)
+      println("γ[" * string(k) * "]: " * string(γk))
+      println("")
+    end
+
+    println("")
+    for k in 1:iter_params.p
+      println("vs[" * string(k) * "]")
+      vkdim = Int(round(sqrt(length(iter_params.vs[k]))))
+      display(round.(reshape(iter_params.vs[k], (vkdim, vkdim)), digits=3))
+      println("")
+    end
+
+    println("")
+    for k in 1:iter_params.p
+      ζk = round.(iter_params.ζs[k]', digits=3)
+      println("ζs[" * string(k) * "]: " * string(ζk'))
+      println("")
+    end
+
+    println("")
+    for k in 1:iter_params.p
+      τk = round.(iter_params.τs[k]', digits=3)
+      println("τs[" * string(k) * "]: " * string(τk'))
+      println("")
+    end
+
+    println("")
+    for k in 1:iter_params.p
+      μk = round.(iter_params.μs[k]', digits=3)
+      println("μs[" * string(k) * "]: " * string(μk'))
+      println("")
+    end
+
+    println("")
+    println("η: " * string(iter_params.η))
+    =#
+
+    println("\tρ: " * string(iter_params.ρ))
+
+    #=
+    println("\n *** \t\t\t *** \t\t\t *** \n")
+    =#
+
+
+    # End dump space
+
   end
 
   return iter_params, isγSat(iter_params, cache, opts), iters_run, total_time
@@ -356,14 +418,14 @@ function run(inst :: QueryInstance, opts :: AdmmOptions)
 
   new_params, issat, iters_run, admm_iters_time = admm(start_params, cache, opts)
 
-  ρ = new_params.γ[1]
+  ρ = new_params.ρ
 
   total_time = time() - start_time
   output = SolutionOutput(
             model = new_params,
             summary = "iters run: " * string(iters_run),
             status = issat ? "OPTIMAL" : "UNKNOWN",
-            objective_value = "ρ: " * string(ρ) * ", (sqrt(ρ): " * string(sqrt(ρ)),
+            objective_value = "ρ: " * string(ρ),
             total_time = total_time,
             setup_time = precompute_time,
             solve_time = admm_iters_time)

@@ -141,6 +141,7 @@ end
 # Make the Ys
 function makeYk(k :: Int, β :: Int, γk, ffnet :: FeedForwardNetwork, pattern :: TPattern)
   @assert 1 <= k <= ffnet.L
+  @assert 1 <= k + β <= ffnet.L
   # Make the Xk first
   if k == 1
     γ1 = γk[2:end]
