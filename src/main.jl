@@ -73,12 +73,15 @@ println("")
 # ADMM testing
 
 
-#=
 admminst = QueryInstance(net=ffnet, β=1, pattern=BandedPattern(band=2))
 admmopts = AdmmOptions(verbose=true)
 params = initParams(admminst, admmopts)
 
 cache = precompute(params, admminst, admmopts)
-=#
+
+println("\n\n\n")
+
+admmsoln = AdmmLipSdp.run(admminst, admmopts)
+
 
 
