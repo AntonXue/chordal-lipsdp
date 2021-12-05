@@ -3,8 +3,8 @@ include("header.jl"); using .Header
 include("common.jl"); using .Common
 include("utils.jl"); using .Utils
 include("lipsdp.jl"); using .LipSdp
-include("split-lipsdp.jl"); using .SplitLipSdp
 include("admm-lipsdp.jl"); using .AdmmLipSdp
+include("split-lipsdp.jl"); using .SplitLipSdp
 
 include("tests.jl"); using .Tests
 
@@ -74,24 +74,39 @@ println("")
 # ADMM testing
 
 
-admminst = QueryInstance(net=ffnet, β=2, pattern=BandedPattern(band=2))
-admmopts = AdmmOptions(max_iters=100, α=3, verbose=true)
+admminst = QueryInstance(net=ffnet, β=0, pattern=BandedPattern(band=2))
+admmopts = AdmmOptions(max_iters=200, α=1.0, verbose=true)
 params = initParams(admminst, admmopts)
 
 cache = precompute(params, admminst, admmopts)
 
 println("\n\n\n")
 
+#=
 admmsoln = AdmmLipSdp.run(admminst, admmopts)
-
 println("admm soln")
 println(admmsoln)
+=#
 
 println("")
 
 # For sanity
+
+SplitAopts= SplitOptions(setupMethod=SplitLipSdp.AdmmCacheSetup())
+splitSolnA = SplitLipSdp.run(admminst, SplitAopts)
+println("splitSolnA: " * string(splitSolnA))
+println("")
+
+
 SplitSopts = SplitOptions(setupMethod=SplitLipSdp.SimpleSetup())
 splitSolnS = SplitLipSdp.run(admminst, SplitSopts)
 println("splitSolnS: " * string(splitSolnS))
+println("")
+
+Splitζopts = SplitOptions(setupMethod=SplitLipSdp.ζsFirstSetup())
+splitSolnζ = SplitLipSdp.run(admminst, Splitζopts)
+println("splitSolnζ: " * string(splitSolnζ))
+println("")
+
 
 

@@ -9,11 +9,14 @@ using JuMP
 using MosekTools
 using Mosek
 
+using ..AdmmLipSdp
+
 # How the construction is done
 abstract type SetupMethod end
 struct SimpleSetup <: SetupMethod end
 struct YsFirstSetup <: SetupMethod end
 struct ζsFirstSetup <: SetupMethod end
+struct AdmmCacheSetup <: SetupMethod end
 
 @with_kw struct SplitOptions
   setupMethod :: SetupMethod
@@ -199,6 +202,38 @@ function setupViaζsFirst(model, inst :: QueryInstance, opts :: SplitOptions)
   return model, setup_time
 end
 
+# Test the integrity of the Admm cache
+function setupViaAdmmCache(model, inst :: QueryInstance, opts :: SplitOptions)
+  setup_start_time = time()
+  ffnet = inst.net
+  edims = ffnet.edims
+  fdims = ffnet.fdims
+  L = ffnet.L
+  β = inst.β
+  p = inst.p
+
+  admmopts = AdmmLipSdp.AdmmOptions()
+  admmparams = AdmmLipSdp.initParams(inst, admmopts)
+  admmcache = AdmmLipSdp.precompute(admmparams, inst, admmopts)
+
+  γdims = admmparams.γdims
+  γ = @variable(model, [1:sum(γdims)])
+  @constraint(model, γ[1:sum(γdims)] .>= 0)
+
+  for k in 1:p
+    ζk = Hc(k, β+1, γdims) * γ
+    zk = admmcache.Js[k] * ζk + admmcache.zaffs[k]
+    Zkdim = Int(round(sqrt(length(zk))))
+    Zk = reshape(zk, (Zkdim, Zkdim))
+    @SDconstraint(model, Zk <= 0)
+  end
+
+  # Set up objective and return
+  @objective(model, Min, γ[1]) # ρ = γ[1]
+  setup_time = time() - setup_start_time
+  return model, setup_time
+end
+
 # Depending on the options, call the appropriate setup function
 function setup(inst :: QueryInstance, opts :: SplitOptions)
   model = Model(optimizer_with_attributes(
@@ -212,6 +247,8 @@ function setup(inst :: QueryInstance, opts :: SplitOptions)
     return setupViaYsFirst(model, inst, opts)
   elseif opts.setupMethod isa ζsFirstSetup
     return setupViaζsFirst(model, inst, opts)
+  elseif opts.setupMethod isa AdmmCacheSetup
+    return setupViaAdmmCache(model, inst, opts)
   else
     error("unsupported setup method: " * string(opts.setupMethod))
   end

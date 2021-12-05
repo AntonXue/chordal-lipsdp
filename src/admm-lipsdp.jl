@@ -129,6 +129,8 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
   Jtzaffs = Vector{Any}()
   I_JtJ_invs = Vector{Any}()
 
+  Ωinv = makeΩinv(β+1, edims)
+
   # Populate the Js and its dependencies
   for k in 1:p
     Jk_start_time = time()
@@ -137,6 +139,10 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
     kdims, tups = makeTilingInfo(k, β+1, edims)
 
     @assert length(tups) == length(ζinds[k])
+
+    # Setup the overlap matrix
+    Eck = Ec(k, β+1, edims)
+    Ωkinv = Eck * Ωinv * Eck'
 
     # Aggregate each Yss[k] into Jk after slicing and inserting
     # Recalling that ζk[i] generates Y[k+j]
@@ -147,15 +153,17 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
       Eins = vcat([E(l, kdims) for l in insertlow:inserthigh]...)
       for Yil in Yss[k+j]
         slicedYil = Eslice * Yil * Eslice'
-        vecYil = vec(Eins' * slicedYil * Eins)
-        push!(Jk, vecYil)
+        insYil = Eins' * slicedYil * Eins
+        insYil = insYil .* Ωkinv
+        push!(Jk, vec(insYil))
       end
 
       # Compute the affine component also because it's convenient
       Yilaff = Yaffs[k+j]
       slicedYilaff = Eslice * Yilaff * Eslice'
-      vecYilaff = vec(Eins' * slicedYilaff * Eins)
-      push!(zkaffparts, vecYilaff)
+      insYilaff = Eins' * slicedYilaff * Eins
+      insYilaff = insYilaff .* Ωkinv
+      push!(zkaffparts, vec(insYilaff))
     end
 
     # cache the Jacobian and affine components
@@ -179,8 +187,9 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
 
 
   # Compute Dinv
-  D = sum(Hc(k, β+1, γdims)' * Hc(k, β+1, γdims) for k in 1:p)
+  D = sum(Hc(k, β+1, γdims)' * Hc(k, β+1, γdims) for k in 1:p) + e(1, sum(γdims)) * e(1, sum(γdims))'
   D = diag(D)
+
   @assert minimum(D) >= 0
   Dinv = 1 ./ D
 
@@ -202,8 +211,9 @@ end
 # The γ step
 function stepγ(params :: AdmmParams, cache :: AdmmCache)
   # TODO: optimize
+  e1part = e(1, sum(params.γdims)) * (params.ρ + (params.η / params.α))
   tmp = [Hc(k, params.β+1, params.γdims)' * (params.ζs[k] + (params.μs[k] / params.α)) for k in 1:params.p]
-  tmp = cache.Dinv .* sum(tmp)
+  tmp = cache.Dinv .* (e1part + sum(tmp))
   return projectΓ(tmp)
 end
 
@@ -226,8 +236,6 @@ end
 
 # The ρ step
 function stepρ(params :: AdmmParams, cache :: AdmmCache)
-  # tmp = params.ρ - params.γ[1] + (params.η / params.α)
-  # tmp = -1 / tmp
   tmp = (params.α * params.γ[1]) - params.η - 1
   tmp = tmp / params.α
   return tmp
@@ -266,8 +274,85 @@ end
 
 # The X = {γ, v1, ..., vp} variable updates
 function stepX(params :: AdmmParams, cache :: AdmmCache)
+  println("stepX!")
   new_γ = stepγ(params, cache)
   new_vs = Vector([stepvk(k, params, cache) for k in 1:params.p])
+  return (new_γ, new_vs)
+end
+
+# The solver version
+function stepXSolver(params :: AdmmParams, cache :: AdmmCache)
+  println("stepXSolver!")
+  model = Model(optimizer_with_attributes(
+    Mosek.Optimizer,
+    "QUIET" => true,
+    "INTPNT_CO_TOL_DFEAS" => 1e-9
+  ))
+
+  lenγ = length(params.γ)
+  ρ = params.ρ
+  ζs = params.ζs
+  τs = params.τs
+  μs = params.μs
+  η = params.η
+  α = params.α
+
+  β = params.β
+  p = params.p
+  γdims = params.γdims
+
+  var_γ = @variable(model, [1:lenγ])
+  @constraint(model, var_γ[1:lenγ] .>= 0)
+  
+  var_Vs = Vector{Any}()
+  for k in 1:params.p
+    vkdim = Int(round(sqrt(length(params.vs[k]))))
+    var_Vk = @variable(model, [1:vkdim, 1:vkdim])
+    @SDconstraint(model, var_Vk <= 0)
+    push!(var_Vs, var_Vk)
+  end
+
+  # The relevant parts of the augmented Lagrangian
+
+  γnorms = [sum((ζs[k] - Hc(k, β+1, γdims) * var_γ + (μs[k] / α)).^2) for k in 1:p]
+  Vnorms = [sum((vec(var_Vs[k]) - makezk(k, params.ζs[k], cache) + (τs[k] / α)).^2) for k in 1:p]
+
+  tmp = ρ + (α / 2) * (ρ - e(1, lenγ)' * var_γ + (η / α))^2
+  tmp = tmp + (α / 2) * (sum(γnorms) + sum(Vnorms))
+  L = tmp
+
+  @objective(model, Min, L)
+  optimize!(model)
+
+  new_γ = value.(var_γ)
+  new_vs = [vec(value.(var_Vs[k])) for k in 1:p]
+
+  #=
+  @variable(model, var_γ[1:length(params.γ)] >= 0)
+  var_Vs = Vector{Any}()
+  for k in 1:params.p
+    vkdim = Int(round(sqrt(length(params.vs[k]))))
+    var_Vk = @variable(model, [1:vkdim, 1:vkdim])
+    @SDconstraint(model, var_Vk <= 0)
+    push!(var_Vs, var_Vk)
+  end
+
+  β = params.β
+  vparts = Vector{Any}()
+  γparts = Vector{Any}()
+  for k in 1:params.p
+    push!(vparts, vec(var_Vs[k]) - makezk(k, params.ζs[k], cache) + (params.τs[k] / params.α))
+    push!(γparts, params.ζs[k] - Hc(k, β+1, params.γdims) * var_γ + (params.μs[k] / params.α))
+  end
+
+  vsum = sum(vparts[k]' * vparts[k] for k in 1:params.p)
+  γsum = sum(γparts[k]' * γparts[k] for k in 1:params.p)
+
+  @objective(model, Min, vsum + γsum)
+  optimize!(model)
+  new_γ = value.(var_γ)
+  new_vs = [vec(value.(var_Vs[k])) for k in 1:params.p]
+  =#
   return (new_γ, new_vs)
 end
 
@@ -309,7 +394,8 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
     step_start_time = time()
 
     xstart_time = time()
-    new_γ, new_vs = stepX(iter_params, cache)
+    # new_γ, new_vs = stepX(iter_params, cache)
+    new_γ, new_vs = stepXSolver(iter_params, cache)
     iter_params.γ = new_γ
     iter_params.vs = new_vs
     xtotal_time = time() - xstart_time
@@ -324,7 +410,7 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
     new_τs, new_μs, new_η = stepZ(iter_params, cache)
     iter_params.τs = new_τs
     iter_params.μs = new_μs
-    iter_params.η = new_η
+    iter_params.η = new_
     ztotal_time = time() - zstart_time
 
     # Coalesce all the time statistics
