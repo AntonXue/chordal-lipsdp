@@ -4,10 +4,15 @@ module Tests
 using ..Header
 using ..Common
 using ..LipSdp
+using ..AdmmLipSdp
 using ..SplitLipSdp
 
 using LinearAlgebra
 using Random
+using JuMP
+using Mosek
+using MosekTools
+
 
 # Test that two different formulations of M are equivalent
 function testEquivMs(inst :: QueryInstance; verbose :: Bool = true)
@@ -211,6 +216,54 @@ function testTiling(inst :: QueryInstance; verbose :: Bool = true)
 
   if verbose; println("maxdiff: " * string(maxdiff)) end
   @assert maxdiff <= 1e-13
+end
+
+
+# Test the different ADMM steps
+function testStepY(inst :: QueryInstance; verbose :: Bool = true)
+  admmopts = AdmmOptions(verbose=true)
+  params = initParams(inst, admmopts, randomized=true)
+  cache = precompute(params, inst, admmopts)
+
+  # Manual implementation of the minimization problem via a solver call
+  model = Model(optimizer_with_attributes(
+    Mosek.Optimizer,
+    "QUIET" => true,
+    "INTPNT_CO_TOL_DFEAS" => 1e-9))
+
+  β = inst.β
+  γdims = params.γdims
+
+  ρ = @variable(model)
+  ζs = Vector{Any}()
+  for k in 1:inst.p
+    ζk = @variable(model, [1:length(params.ζs[k])])
+    push!(ζs, ζk)
+  end
+
+  ρterm = (ρ - params.γ[1] + (params.η / params.α))^2
+  γnorms = [sum((ζs[k] - Hc(k, β+1, γdims) * params.γ + (params.μs[k] / params.α)).^2) for k in 1:inst.p]
+  Vnorms = [sum((params.vs[k] - AdmmLipSdp.makezk(k, ζs[k], cache) + (params.τs[k] / params.α)).^2) for k in 1:inst.p]
+
+  L = ρ + (params.α / 2) * (ρterm + sum(γnorms) + sum(Vnorms))
+  @objective(model, Min, L)
+  optimize!(model)
+
+  solver_ρ = value.(ρ)
+  solver_ζs = [value.(ζs[k]) for k in 1:inst.p]
+
+
+  # The version implemented
+  step_ρ, step_ζs = AdmmLipSdp.stepY(params, cache)
+
+  ρmaxdiff = abs(solver_ρ - step_ρ)
+  ζsmaxdiffs = [maximum(abs.(solver_ζs[k] - step_ζs[k])) for k in 1:inst.p]
+
+
+  println("ρmaxdiff: " * string(ρmaxdiff))
+  println("ζsmaxdiffs: " * string(ζsmaxdiffs'))
+
+  return (solver_ρ, solver_ζs, step_ρ, step_ζs)
 end
 
 end # End module

@@ -17,8 +17,9 @@ Random.seed!(1234)
 
 #
 # xdims = [1;1;1;1;1;1;1;1;1;1]
-xdims = [2;3;4;3;4]
-# xdims = [2;3;4;5;6;7;6;5;4;3;2]
+# xdims = [2;2;2;2;2;2]
+# xdims = [2;3;4;3;4]
+xdims = [2;3;4;5;6;7;6;5;4;3;2]
 # xdims = [2; 20; 20; 20; 20; 20; 20; 2]
 # xdims = [2; 10; 10; 10; 10; 10; 10; 10; 10; 10; 10; 10; 2]
 # xdims = [2; 20; 20; 20; 20; 20; 20; 2]
@@ -51,9 +52,9 @@ println("")
 
 # Split testing
 
-splitinst = QueryInstance(net=ffnet, β=1, pattern=BandedPattern(band=2))
-
 #=
+splitinst = QueryInstance(net=ffnet, β=4, pattern=BandedPattern(band=2))
+
 SplitSopts = SplitOptions(setupMethod=SplitLipSdp.SimpleSetup())
 splitSolnS = SplitLipSdp.run(splitinst, SplitSopts)
 println("splitSolnS: " * string(splitSolnS))
@@ -74,30 +75,23 @@ println("")
 # ADMM testing
 
 
-admminst = QueryInstance(net=ffnet, β=0, pattern=BandedPattern(band=2))
-admmopts = AdmmOptions(max_iters=200, α=1.0, verbose=true)
+admminst = QueryInstance(net=ffnet, β=2, pattern=BandedPattern(band=3))
+admmopts = AdmmOptions(max_iters=3, α=1.0, verbose=true)
 params = initParams(admminst, admmopts)
 
 cache = precompute(params, admminst, admmopts)
 
 println("\n\n\n")
 
-#=
 admmsoln = AdmmLipSdp.run(admminst, admmopts)
 println("admm soln")
 println(admmsoln)
-=#
 
 println("")
 
 # For sanity
 
-SplitAopts= SplitOptions(setupMethod=SplitLipSdp.AdmmCacheSetup())
-splitSolnA = SplitLipSdp.run(admminst, SplitAopts)
-println("splitSolnA: " * string(splitSolnA))
-println("")
-
-
+#=
 SplitSopts = SplitOptions(setupMethod=SplitLipSdp.SimpleSetup())
 splitSolnS = SplitLipSdp.run(admminst, SplitSopts)
 println("splitSolnS: " * string(splitSolnS))
@@ -107,6 +101,13 @@ Splitζopts = SplitOptions(setupMethod=SplitLipSdp.ζsFirstSetup())
 splitSolnζ = SplitLipSdp.run(admminst, Splitζopts)
 println("splitSolnζ: " * string(splitSolnζ))
 println("")
+
+SplitAopts = SplitOptions(setupMethod=SplitLipSdp.AdmmCacheSetup())
+splitSolnA = SplitLipSdp.run(admminst, SplitAopts)
+println("splitSolnA: " * string(splitSolnA))
+println("")
+=#
+
 
 
 

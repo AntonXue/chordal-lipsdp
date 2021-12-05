@@ -46,7 +46,7 @@ end
 
 # Initialize zero parameters of the appropriat esize
 
-function initParams(inst :: QueryInstance, opts :: AdmmOptions)
+function initParams(inst :: QueryInstance, opts :: AdmmOptions; randomized :: Bool = false)
   @assert inst.net isa FeedForwardNetwork
   ffnet = inst.net
   edims = ffnet.edims
@@ -62,19 +62,23 @@ function initParams(inst :: QueryInstance, opts :: AdmmOptions)
     γdims[k] = γkdim
   end
 
-  γ = zeros(sum(γdims))
-  ρ = 1.0
+  γ = randomized ? randn(sum(γdims)) : zeros(sum(γdims))
+  ρ = randomized ? randn() : 0.0
+
   ζs = [Hc(k, β+1, γdims) * γ for k in 1:p]
   
   vs = Vector{Any}()
   for k in 1:p
     Zkdim = sum(edims[k:k+β+1])
-    push!(vs, zeros(Zkdim^2))
+    ζk = randomized ? randn(Zkdim^2) : zeros(Zkdim^2)
+    push!(vs, ζk)
   end
 
-  τs = [zeros(length(vs[k])) for k in 1:p]
-  μs = [zeros(length(ζs[k])) for k in 1:p]
-  η = 1.0 # not zero, so that ρ doesn't instantly mess up
+  τs = [randomized ? randn(length(vs[k])) : zeros(length(vs[k])) for k in 1:p]
+  μs = [randomized ? randn(length(ζs[k])) : zeros(length(ζs[k])) for k in 1:p]
+
+  η = randomized ? randn() : 0.0
+
   α = opts.α
   params = AdmmParams(γ=γ, vs=vs, ρ=ρ, ζs=ζs, τs=τs, μs=μs, η=η, α=α, γdims=γdims, β=β)
   return params
@@ -187,7 +191,8 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
 
 
   # Compute Dinv
-  D = sum(Hc(k, β+1, γdims)' * Hc(k, β+1, γdims) for k in 1:p) + e(1, sum(γdims)) * e(1, sum(γdims))'
+  D = sum(Hc(k, β+1, γdims)' * Hc(k, β+1, γdims) for k in 1:p)
+  D = D + e(1, sum(γdims)) * e(1, sum(γdims))'
   D = diag(D)
 
   @assert minimum(D) >= 0
@@ -199,7 +204,7 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
 end
 
 # Calculate the vectorized Zk
-function makezk(k :: Int, ζk :: Vector{Float64}, cache :: AdmmCache)
+function makezk(k :: Int, ζk, cache :: AdmmCache)
   return cache.Js[k] * ζk + cache.zaffs[k]
 end
 
@@ -307,52 +312,24 @@ function stepXSolver(params :: AdmmParams, cache :: AdmmCache)
   var_Vs = Vector{Any}()
   for k in 1:params.p
     vkdim = Int(round(sqrt(length(params.vs[k]))))
-    var_Vk = @variable(model, [1:vkdim, 1:vkdim])
+    var_Vk = @variable(model, [1:vkdim, 1:vkdim], Symmetric)
     @SDconstraint(model, var_Vk <= 0)
     push!(var_Vs, var_Vk)
   end
 
   # The relevant parts of the augmented Lagrangian
 
+  ρterm = (ρ - var_γ[1] + (η / α))^2
   γnorms = [sum((ζs[k] - Hc(k, β+1, γdims) * var_γ + (μs[k] / α)).^2) for k in 1:p]
   Vnorms = [sum((vec(var_Vs[k]) - makezk(k, params.ζs[k], cache) + (τs[k] / α)).^2) for k in 1:p]
 
-  tmp = ρ + (α / 2) * (ρ - e(1, lenγ)' * var_γ + (η / α))^2
-  tmp = tmp + (α / 2) * (sum(γnorms) + sum(Vnorms))
-  L = tmp
+  L = ρ + (α / 2) * (ρterm + sum(γnorms) + sum(Vnorms))
 
   @objective(model, Min, L)
   optimize!(model)
 
   new_γ = value.(var_γ)
   new_vs = [vec(value.(var_Vs[k])) for k in 1:p]
-
-  #=
-  @variable(model, var_γ[1:length(params.γ)] >= 0)
-  var_Vs = Vector{Any}()
-  for k in 1:params.p
-    vkdim = Int(round(sqrt(length(params.vs[k]))))
-    var_Vk = @variable(model, [1:vkdim, 1:vkdim])
-    @SDconstraint(model, var_Vk <= 0)
-    push!(var_Vs, var_Vk)
-  end
-
-  β = params.β
-  vparts = Vector{Any}()
-  γparts = Vector{Any}()
-  for k in 1:params.p
-    push!(vparts, vec(var_Vs[k]) - makezk(k, params.ζs[k], cache) + (params.τs[k] / params.α))
-    push!(γparts, params.ζs[k] - Hc(k, β+1, params.γdims) * var_γ + (params.μs[k] / params.α))
-  end
-
-  vsum = sum(vparts[k]' * vparts[k] for k in 1:params.p)
-  γsum = sum(γparts[k]' * γparts[k] for k in 1:params.p)
-
-  @objective(model, Min, vsum + γsum)
-  optimize!(model)
-  new_γ = value.(var_γ)
-  new_vs = [vec(value.(var_Vs[k])) for k in 1:params.p]
-  =#
   return (new_γ, new_vs)
 end
 
@@ -393,9 +370,17 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
   for t = 1:opts.max_iters
     step_start_time = time()
 
+    #=
+    ystart_time = time()
+    new_ρ, new_ζs = stepY(iter_params, cache)
+    iter_params.ρ = new_ρ
+    iter_params.ζs = new_ζs
+    ytotal_time = time() - ystart_time
+    =#
+
     xstart_time = time()
-    # new_γ, new_vs = stepX(iter_params, cache)
-    new_γ, new_vs = stepXSolver(iter_params, cache)
+    new_γ, new_vs = stepX(iter_params, cache)
+    # new_γ, new_vs = stepXSolver(iter_params, cache)
     iter_params.γ = new_γ
     iter_params.vs = new_vs
     xtotal_time = time() - xstart_time
@@ -410,7 +395,7 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
     new_τs, new_μs, new_η = stepZ(iter_params, cache)
     iter_params.τs = new_τs
     iter_params.μs = new_μs
-    iter_params.η = new_
+    iter_params.η = new_η
     ztotal_time = time() - zstart_time
 
     # Coalesce all the time statistics
@@ -436,12 +421,10 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
     println("\n")
     =#
 
-    #=
-  
     println("")
     γdims = iter_params.γdims
     for k in 1:iter_params.p
-      γk = round.(E(1, γdims) * iter_params.γ, digits=3)
+      γk = round.(E(k, γdims) * iter_params.γ, digits=3)
       println("γ[" * string(k) * "]: " * string(γk))
       println("")
     end
@@ -454,6 +437,7 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
       println("")
     end
 
+    #=
     println("")
     for k in 1:iter_params.p
       ζk = round.(iter_params.ζs[k]', digits=3)
@@ -474,16 +458,14 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
       println("μs[" * string(k) * "]: " * string(μk'))
       println("")
     end
+    =#
 
     println("")
     println("η: " * string(iter_params.η))
-    =#
 
     println("\tρ: " * string(iter_params.ρ))
 
-    #=
     println("\n *** \t\t\t *** \t\t\t *** \n")
-    =#
 
 
     # End dump space
