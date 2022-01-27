@@ -23,11 +23,9 @@ end
 @with_kw mutable struct AdmmParams
   γ :: Vector{Float64}
   vs :: Vector{Vector{Float64}}
-  ρ :: Float64
   ζs :: Vector{Vector{Float64}}
   τs :: Vector{Vector{Float64}}
   μs :: Vector{Vector{Float64}}
-  η :: Float64
   α :: Float64
   γdims :: Vector{Int}
   β :: Int
@@ -63,7 +61,6 @@ function initParams(inst :: QueryInstance, opts :: AdmmOptions; randomized :: Bo
   end
 
   γ = randomized ? randn(sum(γdims)) : zeros(sum(γdims))
-  ρ = randomized ? randn() : 0.0
 
   ζs = [Hc(k, β+1, γdims) * γ for k in 1:p]
   
@@ -77,10 +74,8 @@ function initParams(inst :: QueryInstance, opts :: AdmmOptions; randomized :: Bo
   τs = [randomized ? randn(length(vs[k])) : zeros(length(vs[k])) for k in 1:p]
   μs = [randomized ? randn(length(ζs[k])) : zeros(length(ζs[k])) for k in 1:p]
 
-  η = randomized ? randn() : 0.0
-
   α = opts.α
-  params = AdmmParams(γ=γ, vs=vs, ρ=ρ, ζs=ζs, τs=τs, μs=μs, η=η, α=α, γdims=γdims, β=β)
+  params = AdmmParams(γ=γ, vs=vs, ζs=ζs, τs=τs, μs=μs, α=α, γdims=γdims, β=β)
   return params
 end
 
@@ -172,9 +167,12 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
 
     # cache the Jacobian and affine components
     Jk = hcat(Jk...)
+
+    # Jk = 10 * randn(size(Jk)) # FIXME FIXME FIXME
     push!(Js, Jk)
 
     zkaff = sum(zkaffparts)
+    # zkaff = 10 * randn(length(zkaffparts[1])) # FIXME FIXME FIXME
     push!(zaffs, zkaff)
 
     # Jk' * zkaff
@@ -192,7 +190,6 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
 
   # Compute Dinv
   D = sum(Hc(k, β+1, γdims)' * Hc(k, β+1, γdims) for k in 1:p)
-  D = D + e(1, sum(γdims)) * e(1, sum(γdims))'
   D = diag(D)
 
   @assert minimum(D) >= 0
@@ -203,6 +200,23 @@ function precompute(params :: AdmmParams, inst :: QueryInstance, opts :: AdmmOpt
   return cache
 end
 
+# The primal residual value
+function primalResidual(params :: AdmmParams, cache :: AdmmCache)
+  vzs = Vector{Any}()
+  ζγs = Vector{Any}()
+  norm2 = 0
+  for k in 1:params.p
+    vzk = params.vs[k] - makezk(k, params.ζs[k], cache)
+    push!(vzs, vzk)
+
+    ζγk = params.ζs[k] - Hc(k, params.β+1, params.γdims) * params.γ
+    push!(ζγs, ζγk)
+
+    norm2 = norm2 + norm(vzk)^2 + norm(ζγk)^2
+  end
+  return vzs, ζγs, norm2
+end
+
 # Calculate the vectorized Zk
 function makezk(k :: Int, ζk, cache :: AdmmCache)
   return cache.Js[k] * ζk + cache.zaffs[k]
@@ -211,14 +225,15 @@ end
 # Project onto the nonnegative orthant
 function projectΓ(γ :: Vector{Float64})
   return max.(γ, 0)
+  # return [γ[1]; max.(γ[2:end], 0)]
 end
 
-# The γ step
+#
 function stepγ(params :: AdmmParams, cache :: AdmmCache)
-  # TODO: optimize
-  e1part = e(1, sum(params.γdims)) * (params.ρ + (params.η / params.α))
   tmp = [Hc(k, params.β+1, params.γdims)' * (params.ζs[k] + (params.μs[k] / params.α)) for k in 1:params.p]
-  tmp = cache.Dinv .* (e1part + sum(tmp))
+  tmp = sum(tmp)
+  tmp = tmp - (e(1, sum(params.γdims)) / params.α)
+  tmp = cache.Dinv .* tmp
   return projectΓ(tmp)
 end
 
@@ -237,13 +252,6 @@ function stepvk(k :: Int, params :: AdmmParams, cache :: AdmmCache)
   tmp = makezk(k, params.ζs[k], cache)
   tmp = tmp - (params.τs[k] / params.α)
   return projectNsd(tmp)
-end
-
-# The ρ step
-function stepρ(params :: AdmmParams, cache :: AdmmCache)
-  tmp = (params.α * params.γ[1]) - params.η - 1
-  tmp = tmp / params.α
-  return tmp
 end
 
 # The ζk step
@@ -270,13 +278,6 @@ function stepμk(k :: Int, params :: AdmmParams, cache :: AdmmCache)
   return tmp
 end
 
-# The η update
-function stepη(params :: AdmmParams, cache :: AdmmCache)
-  tmp = params.ρ - params.γ[1]
-  tmp = params.η + params.α * tmp
-  return tmp
-end
-
 # The X = {γ, v1, ..., vp} variable updates
 function stepX(params :: AdmmParams, cache :: AdmmCache)
   println("stepX!")
@@ -286,8 +287,8 @@ function stepX(params :: AdmmParams, cache :: AdmmCache)
 end
 
 # The solver version
-function stepXSolver(params :: AdmmParams, cache :: AdmmCache)
-  println("stepXSolver!")
+function stepXsolver(params :: AdmmParams, cache :: AdmmCache)
+  println("stepXsolver!")
   model = Model(optimizer_with_attributes(
     Mosek.Optimizer,
     "QUIET" => true,
@@ -295,11 +296,9 @@ function stepXSolver(params :: AdmmParams, cache :: AdmmCache)
   ))
 
   lenγ = length(params.γ)
-  ρ = params.ρ
   ζs = params.ζs
   τs = params.τs
   μs = params.μs
-  η = params.η
   α = params.α
 
   β = params.β
@@ -319,11 +318,28 @@ function stepXSolver(params :: AdmmParams, cache :: AdmmCache)
 
   # The relevant parts of the augmented Lagrangian
 
-  ρterm = (ρ - var_γ[1] + (η / α))^2
-  γnorms = [sum((ζs[k] - Hc(k, β+1, γdims) * var_γ + (μs[k] / α)).^2) for k in 1:p]
-  Vnorms = [sum((vec(var_Vs[k]) - makezk(k, params.ζs[k], cache) + (τs[k] / α)).^2) for k in 1:p]
+  γparts = [ζs[k] - Hc(k, β+1, γdims) * var_γ + (μs[k] / α) for k in 1:p]
+  Vparts = [vec(var_Vs[k]) - makezk(k, ζs[k], cache) + (τs[k] / α) for k in 1:p]
 
-  L = ρ + (α / 2) * (ρterm + sum(γnorms) + sum(Vnorms))
+  γnorm2s = Vector{Any}()
+  Vnorm2s = Vector{Any}()
+  for k in 1:p
+    γknorm = @variable(model)
+    Vknorm = @variable(model)
+
+    @constraint(model, [γknorm; γparts[k]] in SecondOrderCone())
+    @constraint(model, [Vknorm; Vparts[k]] in SecondOrderCone())
+
+    push!(γnorm2s, γknorm^2)
+    push!(Vnorm2s, Vknorm^2)
+  end
+
+
+  # For satisfiability
+  # L = (α / 2) * (sum(Vnorm2s) + sum(γnorm2s))
+
+  # For optimality
+  L = var_γ[1] + (α / 2) * (sum(Vnorm2s) + sum(γnorm2s))
 
   @objective(model, Min, L)
   optimize!(model)
@@ -333,19 +349,18 @@ function stepXSolver(params :: AdmmParams, cache :: AdmmCache)
   return (new_γ, new_vs)
 end
 
-# The Y = {ρ, ζ1, ..., ζp} variable updates
+
+#
 function stepY(params :: AdmmParams, cache :: AdmmCache)
-  new_ρ = stepρ(params, cache)
   new_ζs = Vector([stepζk(k, params, cache) for k in 1:params.p])
-  return (new_ρ, new_ζs)
+  return new_ζs
 end
 
-# The Z = {τ1, ..., τp, μ1, ..., μp} variable updates
+#
 function stepZ(params :: AdmmParams, cache :: AdmmCache)
   new_τs = Vector([stepτk(k, params, cache) for k in 1:params.p])
   new_μs = Vector([stepμk(k, params, cache) for k in 1:params.p])
-  new_η = stepη(params, cache)
-  return (new_τs, new_μs, new_η)
+  return (new_τs, new_μs)
 end
 
 # Check that each Zk <= 0
@@ -364,38 +379,35 @@ end
 
 #
 function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
+
+
   iter_params = deepcopy(params)
+  param_hist = Vector{Any}()
+
+  # push!(param_hist, deepcopy(iter_params))
+
   iters_run = 0
   total_time = 0
   for t = 1:opts.max_iters
+
     step_start_time = time()
 
-    #=
-    ystart_time = time()
-    new_ρ, new_ζs = stepY(iter_params, cache)
-    iter_params.ρ = new_ρ
-    iter_params.ζs = new_ζs
-    ytotal_time = time() - ystart_time
-    =#
-
     xstart_time = time()
-    new_γ, new_vs = stepX(iter_params, cache)
-    # new_γ, new_vs = stepXSolver(iter_params, cache)
+    # new_γ, new_vs = stepX(iter_params, cache)
+    new_γ, new_vs = stepXsolver(iter_params, cache)
     iter_params.γ = new_γ
     iter_params.vs = new_vs
     xtotal_time = time() - xstart_time
 
     ystart_time = time()
-    new_ρ, new_ζs = stepY(iter_params, cache)
-    iter_params.ρ = new_ρ
+    new_ζs = stepY(iter_params, cache)
     iter_params.ζs = new_ζs
     ytotal_time = time() - ystart_time
 
     zstart_time = time()
-    new_τs, new_μs, new_η = stepZ(iter_params, cache)
+    new_τs, new_μs = stepZ(iter_params, cache)
     iter_params.τs = new_τs
     iter_params.μs = new_μs
-    iter_params.η = new_η
     ztotal_time = time() - zstart_time
 
     # Coalesce all the time statistics
@@ -404,9 +416,15 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
     all_times = round.((xtotal_time, ytotal_time, ztotal_time, step_total_time, total_time), digits=2)
     if opts.verbose; println("step[" * string(t) * "/" * string(opts.max_iters) * "]" * " time: " * string(all_times)) end
 
-    # println("\tρ: " * string(new_ρ))
+    println("\tρ: " * string(iter_params.γ[1]))
 
     iters_run = t
+    push!(param_hist, deepcopy(iter_params))
+
+
+    vzs, ζγs, resnorm2 = primalResidual(iter_params, cache)
+    println("\tresnorm2: " * string(resnorm2))
+
 
     #=
     if shouldStop(t, iter_params, cache, opts)
@@ -419,7 +437,6 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
     println("γ:")
     display(round.(iter_params.γ, digits=3))
     println("\n")
-    =#
 
     println("")
     γdims = iter_params.γdims
@@ -437,7 +454,6 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
       println("")
     end
 
-    #=
     println("")
     for k in 1:iter_params.p
       ζk = round.(iter_params.ζs[k]', digits=3)
@@ -458,21 +474,21 @@ function admm(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmOptions)
       println("μs[" * string(k) * "]: " * string(μk'))
       println("")
     end
-    =#
 
     println("")
-    println("η: " * string(iter_params.η))
 
-    println("\tρ: " * string(iter_params.ρ))
+    println("\tρ: " * string(iter_params.γ[1]))
 
     println("\n *** \t\t\t *** \t\t\t *** \n")
 
+    =#
 
     # End dump space
+    
 
   end
 
-  return iter_params, isγSat(iter_params, cache, opts), iters_run, total_time
+  return param_hist, iter_params, isγSat(iter_params, cache, opts), iters_run, total_time
 end
 
 # Call this
@@ -484,9 +500,10 @@ function run(inst :: QueryInstance, opts :: AdmmOptions)
   cache = precompute(start_params, inst, opts)
   precompute_time = time() - precompute_start_time
 
-  new_params, issat, iters_run, admm_iters_time = admm(start_params, cache, opts)
+  param_hist, new_params, issat, iters_run, admm_iters_time = admm(start_params, cache, opts)
 
-  ρ = new_params.ρ
+  # ρ = new_params.ρ
+  ρ = new_params.γ[1]
 
   total_time = time() - start_time
   output = SolutionOutput(
@@ -497,11 +514,12 @@ function run(inst :: QueryInstance, opts :: AdmmOptions)
             total_time = total_time,
             setup_time = precompute_time,
             solve_time = admm_iters_time)
-  return output
+  return (param_hist, output)
 end
 
 
 export AdmmOptions
+export makezk, projectΓ, projectNsd, stepX, stepY, stepZ
 export initParams, precompute
 
 end # End module

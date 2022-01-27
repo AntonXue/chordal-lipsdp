@@ -27,7 +27,7 @@ abstract type NeuralNetwork end
   L :: Int = K - 1
 
   # Assert a non-trivial structural integrity of the network
-  @assert length(xdims) >= 3
+  @assert length(xdims) >= 2
   @assert length(xdims) == K + 1
   @assert all([size(Ms[k]) == (xdims[k+1], xdims[k]+1) for k in 1:K])
 end
