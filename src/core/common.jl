@@ -24,6 +24,15 @@ function E(i :: Int, dims :: Vector{Int})
   return E
 end
 
+# Block matrix of [e(k); e(k+1); ...; e(k+size-1)]
+# Assertion fails on out-of-bounds
+function Ec(k :: Int, size :: Int, dim :: Int)
+  @assert k >= 1 && size >= 1
+  @assert 1 <= k + size - 1 <= dim
+  es = [e(j, dim)' for j in k:(k+size-1)]
+  return vcat(es...)
+end
+
 # Make the A block matrix
 function makeA(ffnet :: FeedForwardNetwork)
   edims, fdims = ffnet.edims, ffnet.fdims
@@ -85,11 +94,30 @@ function makeM2(ρ, ffnet :: FeedForwardNetwork)
   return M2
 end
 
+# Calculate the start and size of each clique
+function makeCliqueInfos(b, ffnet :: FeedForwardNetwork)
+  edims = ffnet.edims
+  Zdim = sum(edims)
+  clique_infos = Vector{Tuple{Int, Int, Int}}()
+  for k in 1:length(edims)
+    start = sum(edims[1:k-1])+1
+    Ckdim = edims[k] + edims[k+1] + b
+    if start + Ckdim - 1 >= Zdim
+      push!(clique_infos, (k, start, Zdim-start+1))
+      break
+    else
+      push!(clique_infos, (k, start, Ckdim))
+    end
+  end
+  return clique_infos
+end
+
 
 # A function for making T; smaller instances of Tk can also be made using this
-export e, E
+export e, E, Ec
 export makeA, makeB
 export λlength, makeT, makeM1, makeM2
+export makeCliqueInfos
 
 end # End module
 

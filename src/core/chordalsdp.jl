@@ -1,5 +1,5 @@
-# Implementation of LipSdp
-module LipSdp
+# Implmenetation of a split version of LipSdp
+module ChordalSdp
 
 using ..Header
 using ..Common
@@ -10,15 +10,15 @@ using MosekTools
 using Mosek
 using Printf
 
-# Options
-@with_kw struct LipSdpOptions
+# How the construction is done
+@with_kw struct ChordalSdpOptions
   β :: Int = 0
-  max_solve_time :: Float64 = 30.0  # Timeout in seconds
+  max_solve_time :: Float64 = 30.0
   verbose :: Bool = false
 end
 
-# Compute all of T then query M1
-function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
+#
+function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
   setup_start_time = time()
 
   # Track the variables
@@ -40,19 +40,30 @@ function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
   @constraint(model, ρ >= 0)
   M2 = makeM2(ρ, inst.ffnet)
 
-  # Impose the LMI constraint and objective
-  Z = M1 + M2
-  @SDconstraint(model, Z <= 0)
-  @objective(model, Min, ρ)
+  # All the Zs
+  cinfos = makeCliqueInfos(opts.β, inst.ffnet)
+  Zs = Vector{Any}()
+  for (k, _, Ckdim) in cinfos
+    Zk = @variable(model, [1:Ckdim, 1:Ckdim], Symmetric)
+    vars[Symbol("Z" * string(k))] = Zk
+    @SDconstraint(model, Zk <= 0)
+    push!(Zs, Zk)
+  end
 
-  # Return information
+  # Assert the equality constraint and objective
+  Zdim = sum(inst.ffnet.edims)
+  Zksum = sum(Ec(kstart, Ckdim, Zdim)' * Zs[k] * Ec(kstart, Ckdim, Zdim) for (k, kstart, Ckdim) in cinfos)
+  @constraint(model, M1 + M2 .== Zksum)
+  @objective(model, Min, ρ)
+  
+  # Return stuff
   setup_time = time() - setup_start_time
   if opts.verbose; @printf("\tsetup time: %.3f\n", setup_time) end
   return model, vars, setup_time
 end
 
 # Run the query and return the solution summary
-function solve!(model, vars, opts :: LipSdpOptions)
+function solve!(model, vars, opts :: ChordalSdpOptions)
   optimize!(model)
   summary = solution_summary(model)
   if opts.verbose; @printf("\tsolve time: %.3f\n", summary.solve_time) end
@@ -62,7 +73,7 @@ function solve!(model, vars, opts :: LipSdpOptions)
 end
 
 # The interface to call
-function run(inst :: QueryInstance, opts :: LipSdpOptions)
+function run(inst :: QueryInstance, opts :: ChordalSdpOptions)
   total_start_time = time()
 
   # Model setup
@@ -89,9 +100,9 @@ function run(inst :: QueryInstance, opts :: LipSdpOptions)
     solve_time = summary.solve_time)
 end
 
-#
-export LipSdpOptions, WholeTSetup, SummedXSetup
-export setup!, solve!, run
+export ChordalSdpOptions
+export run
+export makeZ
 
 end # End module
 

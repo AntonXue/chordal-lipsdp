@@ -2,6 +2,7 @@ start_time = time()
 include("core/header.jl"); using .Header
 include("core/common.jl"); using .Common
 include("core/lipsdp.jl"); using .LipSdp
+include("core/chordalsdp.jl"); using .ChordalSdp
 include("utils.jl"); using .Utils
 
 using LinearAlgebra
@@ -25,11 +26,14 @@ Random.seed!(1234)
 xdims = [2;4;6;8;6;4;2]
 ffnet = randomNetwork(xdims, σ=0.5)
 inst = QueryInstance(ffnet=ffnet)
-opts = LipSdpOptions(β=1)
 
-soln = LipSdp.run(inst, opts)
+#
+copts = ChordalSdpOptions(β=1)
+csoln = ChordalSdp.run(inst, copts)
 
-
+#
+lopts = LipSdpOptions(β=1)
+lsoln = LipSdp.run(inst, lopts)
 
 
 
