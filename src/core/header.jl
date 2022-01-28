@@ -15,8 +15,7 @@ struct ReluNetwork <: NetworkType end
 struct TanhNetwork <: NetworkType end
 
 # Generic neural network supertype
-abstract type NeuralNetwork end 
-@with_kw struct FeedForwardNetwork <: NeuralNetwork
+@with_kw struct FeedForwardNetwork
   # The type of the network
   type :: NetworkType
 
@@ -55,8 +54,7 @@ end
 
 # Export suff
 export VecInt, VecF64, MatF64
-export NetworkType, ReluNetwork, TanhNetwork
-export NeuralNetwork, FeedForwardNetwork
+export NetworkType, ReluNetwork, TanhNetwork, FeedForwardNetwork
 export QueryInstance
 export SolutionOutput
 

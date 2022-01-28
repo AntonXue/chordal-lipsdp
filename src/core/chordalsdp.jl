@@ -14,23 +14,22 @@ using Printf
 @with_kw struct ChordalSdpOptions
   β :: Int = 0
   max_solve_time :: Float64 = 30.0
+  solver_tol :: Float64 = 1e-6
   verbose :: Bool = false
 end
 
-#
+# Set up the model for the solver call
 function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
   setup_start_time = time()
-
-  # Track the variables
   vars = Dict()
 
   # Set up M1
   Tdim = sum(inst.ffnet.fdims)
-  λdim = λlength(Tdim, opts.β)
-  λ = @variable(model, [1:λdim])
-  vars[:λ] = λ
-  @constraint(model, λ[1:λdim] .>= 0)
-  T = makeT(Tdim, λ, opts.β)
+  γdim = γlength(Tdim, opts.β)
+  γ = @variable(model, [1:γdim])
+  vars[:γ] = γ
+  @constraint(model, γ[1:γdim] .>= 0)
+  T = makeT(Tdim, γ, opts.β)
   A, B = makeA(inst.ffnet), makeB(inst.ffnet)
   M1 = makeM1(T, A, B, inst.ffnet)
 
@@ -81,10 +80,11 @@ function run(inst :: QueryInstance, opts :: ChordalSdpOptions)
     Mosek.Optimizer,
     "QUIET" => true,
     "MSK_DPAR_OPTIMIZER_MAX_TIME" => opts.max_solve_time,
-    "INTPNT_CO_TOL_REL_GAP" => 1e-6,
-    "INTPNT_CO_TOL_PFEAS" => 1e-6,
-    "INTPNT_CO_TOL_DFEAS" => 1e-6))
+    "INTPNT_CO_TOL_REL_GAP" => opts.solver_tol,
+    "INTPNT_CO_TOL_PFEAS" => opts.solver_tol,
+    "INTPNT_CO_TOL_DFEAS" => opts.solver_tol))
 
+  # Setup and solve
   _, vars, setup_time = setup!(model, inst, opts)
   summary, values = solve!(model, vars, opts)
 
@@ -102,7 +102,6 @@ end
 
 export ChordalSdpOptions
 export run
-export makeZ
 
 end # End module
 

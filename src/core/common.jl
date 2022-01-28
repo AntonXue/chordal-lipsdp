@@ -29,43 +29,41 @@ end
 function Ec(k :: Int, size :: Int, dim :: Int)
   @assert k >= 1 && size >= 1
   @assert 1 <= k + size - 1 <= dim
-  es = [e(j, dim)' for j in k:(k+size-1)]
-  return vcat(es...)
+  ets = [e(j, dim)' for j in k:(k+size-1)]
+  return vcat(ets...)
 end
 
 # Make the A block matrix
 function makeA(ffnet :: FeedForwardNetwork)
-  edims, fdims = ffnet.edims, ffnet.fdims
   Ws = [M[1:end, 1:end-1] for M in ffnet.Ms]
-  A = sum(E(k, fdims)' * Ws[k] * E(k, edims) for k in 1:(ffnet.K-1))
+  A = sum(E(k, ffnet.fdims)' * Ws[k] * E(k, ffnet.edims) for k in 1:(ffnet.K-1))
   return A
 end
 
 # Make the B block matrix
 function makeB(ffnet :: FeedForwardNetwork)
-  edims, fdims = ffnet.edims, ffnet.fdims
-  B = sum(E(k, fdims)' * E(k+1, edims) for k in 1:(ffnet.K-1))
+  B = sum(E(k, ffnet.fdims)' * E(k+1, ffnet.edims) for k in 1:(ffnet.K-1))
   return B
 end
 
-# Calculate how long the λ should be given a particular tband
-function λlength(dim :: Int, tband :: Int)
+# Calculate how long the γ should be given a particular tband
+function γlength(Tdim :: Int, tband :: Int)
   @assert 0 <= tband
-  return sum((dim-tband):dim)
+  return sum((Tdim-tband):Tdim)
 end
 
 # The T
-function makeT(dim :: Int, λ, tband :: Int)
-  @assert length(λ) == λlength(dim, tband)
-  T = Diagonal(λ[1:dim])
+function makeT(Tdim :: Int, γ, tband :: Int)
+  @assert length(γ) == γlength(Tdim, tband)
+  T = Diagonal(γ[1:Tdim])
   if tband > 0
-    ijs = [(i,j) for i in 1:(dim-1) for j in (i+1):dim if j-i <= tband]
-    δts = [e(i,dim)' - e(j,dim)' for (i,j) in ijs]
+    ijs = [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= tband]
+    δts = [e(i,Tdim)' - e(j,Tdim)' for (i,j) in ijs]
     Δ = vcat(δts...)
 
-    # Given a pair i,j calculate its relative index in the λ vector
-    pair2ind(i, j) = sum((dim-(j-i)+1):dim) + i
-    v = vec([λ[pair2ind(i, j)] for (i,j) in ijs])
+    # Given a pair i,j calculate its relative index in the γ vector
+    pair2ind(i,j) = sum((Tdim-(j-i)+1):Tdim) + i
+    v = vec([γ[pair2ind(i,j)] for (i,j) in ijs])
     T += Δ' * (v .* Δ)
   end
   return T
@@ -74,9 +72,9 @@ end
 # Construct M1, or smaller variants depending on what is queried with
 function makeM1(T, A, B, ffnet :: FeedForwardNetwork)
   @assert ffnet.type isa ReluNetwork || ffnet.type isa TanhNetwork
-  seclow, sechigh = 0, 1
-  _R11 = -2 * seclow * sechigh * A' * T * A
-  _R12 = (seclow + sechigh) * A' * T * B
+  low, high = 0, 1
+  _R11 = -2 * low * high * A' * T * A
+  _R12 = (low + high) * A' * T * B
   _R21 = _R12'
   _R22 = -2 * B' * T * B
   M1 = _R11 + _R12 + _R21 + _R22
@@ -116,7 +114,7 @@ end
 # A function for making T; smaller instances of Tk can also be made using this
 export e, E, Ec
 export makeA, makeB
-export λlength, makeT, makeM1, makeM2
+export γlength, makeT, makeM1, makeM2
 export makeCliqueInfos
 
 end # End module

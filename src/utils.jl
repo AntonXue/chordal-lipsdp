@@ -3,23 +3,10 @@
 module Utils
 
 using ..Header
+using ..NNetParser
 using LinearAlgebra
-using DelimitedFiles
 using Random
 using Plots
-
-# Write some data (hopefully Float64-based) to a file
-function fileWriteFloat64(data, file :: String)
-  open(file, "w") do io
-    writedlm(io, data, ',')
-  end
-end
-
-# Read some Float64-based data from a file
-function fileReadFloat64(file :: String)
-  data = readdlm(file, ',', Float64)
-  return data
-end
 
 # Generate a random network given the desired dimensions at each layer
 function randomNetwork(xdims :: VecInt; type :: NetworkType = ReluNetwork(), σ :: Float64 = 1.0)
@@ -66,7 +53,7 @@ function randomTrajectories(N :: Int, ffnet :: FeedForwardNetwork)
 end
 
 # Plot some data to a file
-function runAndPlotRandomTrajectories(N :: Int, ffnet :: FeedForwardNetwork, imgfile="~/Desktop/hello.png")
+function plotRandomTrajectories(N :: Int, ffnet :: FeedForwardNetwork, imgfile="~/Desktop/hello.png")
   # Make sure we can actually plot these in 2D
   @assert ffnet.xdims[end] == 2
 
@@ -78,10 +65,18 @@ function runAndPlotRandomTrajectories(N :: Int, ffnet :: FeedForwardNetwork, img
   savefig(p, imgfile)
 end
 
+# Convert NNet to FeedForwardNetwork + BoxInput
+function loadFeedForwardNetwork(nnet_filepath :: String)
+  nnet = NNetParser.NNet(nnet_filepath)
+  Ms = [[nnet.weights[k] nnet.biases[k]] for k in 1:nnet.numLayers]
+  ffnet = FeedForwardNetwork(type=ReluNetwork(), xdims=nnet.layerSizes, Ms=Ms)
+  return ffnet
+end
+
 #
-export fileWriteFloat64, fileReadFloat64
 export randomNetwork
-export runNetwork, randomTrajectories, runAndPlotRandomTrajectories
+export runNetwork, randomTrajectories, plotRandomTrajectories
+export loadFeedForwardNetwork
 
 end # End module
 
