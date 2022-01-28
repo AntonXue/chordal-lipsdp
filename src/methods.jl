@@ -32,5 +32,9 @@ function warmup(; verbose = false)
   if verbose; @printf("warmup time: %.3f\n", time() - warmup_start_time) end
 end
 
+
+export solveLip
+export warmup
+
 end
 

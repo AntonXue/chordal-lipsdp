@@ -55,7 +55,7 @@ end
 # The T
 function makeT(Tdim :: Int, γ, tband :: Int)
   @assert length(γ) == γlength(Tdim, tband)
-  T = Diagonal(γ[1:Tdim])
+  T = diagm(γ[1:Tdim])
   if tband > 0
     ijs = [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= tband]
     δts = [e(i,Tdim)' - e(j,Tdim)' for (i,j) in ijs]

@@ -19,6 +19,7 @@ function parseArgs()
       action = :store_true
     "--nnet"
       arg_type = String
+      required = true
     #=
     "--deepsdp"
       action = :store_true
@@ -39,8 +40,45 @@ args = parseArgs()
 
 @printf("import loading time: %.3f\n", time() - start_time)
 
-if !(args["nnet"] isa Nothing) && isfile(args["nnet"])
-  ffnet = loadFeedForwardNetwork(args["nnet"])
+ffnet = loadFeedForwardNetwork(args["nnet"])
+
+# Do a warmup of the stuff
+Methods.warmup(verbose=true)
+
+# Different betas to try
+# βs = 0:4
+βs = 0:39
+
+ltimes = VecF64()
+lvals = VecF64()
+
+ctimes = VecF64()
+cvals = VecF64()
+
+for β in βs
+  loop_start_time = time()
+  @printf("tick for β=%d!\n", β)
+  lopts = LipSdpOptions(β=β)
+  lsoln = Methods.solveLip(ffnet, lopts)
+  push!(ltimes, lsoln.solve_time)
+  push!(lvals, lsoln.objective_value)
+  @printf("\tlipsdp \ttime: %.3f, \tvalue: %.3f\n", lsoln.solve_time, lsoln.objective_value)
+
+  copts = ChordalSdpOptions(β=β)
+  csoln = Methods.solveLip(ffnet, copts)
+  push!(ctimes, csoln.solve_time)
+  push!(cvals, csoln.objective_value)
+  @printf("\tchordl \ttime: %.3f, \tvalue: %.3f\n", csoln.solve_time, csoln.objective_value)
 end
 
+# Plot stuff
+
+labeled_time_lines = [("lipsdp", ltimes); ("chordal", ctimes)]
+Utils.plotLines(βs, labeled_time_lines, saveto="~/Desktop/times.png")
+
+labeled_val_lines = [("lipsdp", lvals); ("chordal", cvals)]
+Utils.plotLines(βs, labeled_val_lines, ylogscale=true, saveto="~/Desktop/values.png")
+
+
+@printf("repl start time: %.3f\n", time() - start_time)
 

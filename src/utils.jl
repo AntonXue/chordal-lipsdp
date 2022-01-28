@@ -8,6 +8,8 @@ using LinearAlgebra
 using Random
 using Plots
 
+pyplot()
+
 # Generate a random network given the desired dimensions at each layer
 function randomNetwork(xdims :: VecInt; type :: NetworkType = ReluNetwork(), σ :: Float64 = 1.0)
   @assert length(xdims) > 1
@@ -56,13 +58,30 @@ end
 function plotRandomTrajectories(N :: Int, ffnet :: FeedForwardNetwork, imgfile="~/Desktop/hello.png")
   # Make sure we can actually plot these in 2D
   @assert ffnet.xdims[end] == 2
-
   xfs = randomTrajectories(N, ffnet)
   d1s = [xf[1] for xf in xfs]
   d2s = [xf[2] for xf in xfs]
-  
   p = scatter(d1s, d2s, markersize=2, alpha=0.3)
   savefig(p, imgfile)
+end
+
+# Plot different line data
+# Get data of form (label1, ys1), (label2, ys2), ...
+function plotLines(xs, labeled_lines :: Vector{Tuple{String, VecF64}};
+                   ylogscale :: Bool = false, saveto :: String = "~/Desktop/foo.png")
+  # Make sure we have a consistent number of data
+  @assert all(lys -> length(xs) == length(lys[2]), labeled_lines)
+  plt = plot()
+  colors = theme_palette(:auto)
+  for (i, (lbl, ys)) in enumerate(labeled_lines)
+    if ylogscale
+      plot!(xs, ys, label=lbl, color=colors[i], yscale=:log10)
+    else
+      plot!(xs, ys, label=lbl, color=colors[i])
+    end
+  end
+  savefig(plt, saveto)
+  return plt
 end
 
 # Convert NNet to FeedForwardNetwork + BoxInput
@@ -75,7 +94,8 @@ end
 
 #
 export randomNetwork
-export runNetwork, randomTrajectories, plotRandomTrajectories
+export runNetwork, randomTrajectories
+export plotRandomTrajectories, plotLines
 export loadFeedForwardNetwork
 
 end # End module
