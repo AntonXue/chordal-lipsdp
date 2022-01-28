@@ -22,7 +22,7 @@ function fileReadFloat64(file :: String)
 end
 
 # Generate a random network given the desired dimensions at each layer
-function randomNetwork(xdims :: Vector{Int64}; nettype :: NetworkType = ReluNetwork(), σ :: Float64 = 1.0)
+function randomNetwork(xdims :: VecInt; type :: NetworkType = ReluNetwork(), σ :: Float64 = 1.0)
   @assert length(xdims) > 1
   Ms = Vector{Any}()
   for k = 1:length(xdims) - 1
@@ -30,15 +30,15 @@ function randomNetwork(xdims :: Vector{Int64}; nettype :: NetworkType = ReluNetw
     Mk = randn(xdims[k+1], xdims[k]+1) * σ
     push!(Ms, Mk)
   end
-  return FeedForwardNetwork(nettype=nettype, xdims=xdims, Ms=Ms)
+  return FeedForwardNetwork(type=type, xdims=xdims, Ms=Ms)
 end
 
 # Run a feedforward net on an initial input and give the output
 function runNetwork(x1, ffnet :: FeedForwardNetwork)
   function ϕ(x)
-    if ffnet.nettype isa ReluNetwork
+    if ffnet.type isa ReluNetwork
       return max.(x, 0)
-    elseif ffnet.nettype isa TanhNetwork
+    elseif ffnet.type isa TanhNetwork
       return tanh.(x)
     else
       error("unsupported network: " * string(ffnet))
