@@ -46,18 +46,20 @@ function makeB(ffnet :: FeedForwardNetwork)
   return B
 end
 
-# Calculate how long the γ should be given a particular tband
-function γlength(Tdim :: Int, tband :: Int)
-  @assert 0 <= tband
-  return sum((Tdim-tband):Tdim)
+# Calculate how long the γ should be given a particular τ
+function γlength(Tdim :: Int, τ :: Int)
+  @assert 0 <= τ
+  return sum((Tdim-τ):Tdim)
 end
 
 # The T
-function makeT(Tdim :: Int, γ, tband :: Int)
-  @assert length(γ) == γlength(Tdim, tband)
+function makeT(Tdim :: Int, γ, τ :: Int)
+  @assert length(γ) == γlength(Tdim, τ)
   T = diagm(γ[1:Tdim])
-  if tband > 0
-    ijs = [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= tband]
+  # T = Matrix(Diagonal(γ[1:Tdim]))
+  # T = I(Tdim)
+  if τ > 0
+    ijs = [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= τ]
     δts = [e(i,Tdim)' - e(j,Tdim)' for (i,j) in ijs]
     Δ = vcat(δts...)
 

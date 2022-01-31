@@ -57,22 +57,21 @@ cvals = VecF64()
 
 for τ in τs
   loop_start_time = time()
-  #=
-  @printf("tick for τ=%d!\n", τ)
-  lopts = LipSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-3)
-  lsoln = Methods.solveLip(ffnet, lopts)
-  push!(ltimes, lsoln.solve_time)
-  push!(lvals, lsoln.objective_value)
-  @printf("\tlipsdp \ttime: %.3f, \tvalue: %.3f (%s)\n", lsoln.solve_time, lsoln.objective_value, lsoln.termination_status)
-  =#
-  push!(ltimes, 10)
-  push!(lvals, 10)
 
-  copts = ChordalSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-3)
+  copts = ChordalSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-3, verbose=true)
   csoln = Methods.solveLip(ffnet, copts)
   push!(ctimes, csoln.solve_time)
   push!(cvals, csoln.objective_value)
   @printf("\tchordl \ttime: %.3f, \tvalue: %.3f (%s)\n", csoln.solve_time, csoln.objective_value, csoln.termination_status)
+
+  @printf("tick for τ=%d!\n", τ)
+  lopts = LipSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-3, verbose=true)
+  lsoln = Methods.solveLip(ffnet, lopts)
+  push!(ltimes, lsoln.solve_time)
+  push!(lvals, lsoln.objective_value)
+  @printf("\tlipsdp \ttime: %.3f, \tvalue: %.3f (%s)\n", lsoln.solve_time, lsoln.objective_value, lsoln.termination_status)
+  # push!(ltimes, 10)
+  # push!(lvals, 10)
 end
 
 # Plot stuff

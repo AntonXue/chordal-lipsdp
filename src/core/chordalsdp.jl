@@ -12,7 +12,7 @@ using Printf
 
 # How the construction is done
 @with_kw struct ChordalSdpOptions
-  β :: Int = 0
+  τ :: Int = 0
   max_solve_time :: Float64 = 30.0
   solver_tol :: Float64 = 1e-6
   verbose :: Bool = false
@@ -25,11 +25,11 @@ function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
 
   # Set up M1
   Tdim = sum(inst.ffnet.fdims)
-  γdim = γlength(Tdim, opts.β)
+  γdim = γlength(Tdim, opts.τ)
   γ = @variable(model, [1:γdim])
   vars[:γ] = γ
   @constraint(model, γ[1:γdim] .>= 0)
-  T = makeT(Tdim, γ, opts.β)
+  T = makeT(Tdim, γ, opts.τ)
   A, B = makeA(inst.ffnet), makeB(inst.ffnet)
   M1 = makeM1(T, A, B, inst.ffnet)
 
@@ -40,13 +40,17 @@ function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
   M2 = makeM2(ρ, inst.ffnet)
 
   # All the Zs
-  cinfos = makeCliqueInfos(opts.β, inst.ffnet)
+  cinfos = makeCliqueInfos(opts.τ, inst.ffnet)
   Zs = Vector{Any}()
   for (k, _, Ckdim) in cinfos
     Zk = @variable(model, [1:Ckdim, 1:Ckdim], Symmetric)
     vars[Symbol("Z" * string(k))] = Zk
     @SDconstraint(model, Zk <= 0)
     push!(Zs, Zk)
+
+    if opts.verbose
+      @printf("clique %d/%d of size: (%d, %d)\n", k, length(cinfos), size(Zk)[1], size(Zk)[2])
+    end
   end
 
   # Assert the equality constraint and objective
@@ -79,6 +83,7 @@ function run(inst :: QueryInstance, opts :: ChordalSdpOptions)
   model = Model(optimizer_with_attributes(
     Mosek.Optimizer,
     "QUIET" => true,
+    "MSK_DPAR_SEMIDEFINITE_TOL_APPROX" => 1e-5,
     "MSK_DPAR_OPTIMIZER_MAX_TIME" => opts.max_solve_time,
     "INTPNT_CO_TOL_REL_GAP" => opts.solver_tol,
     "INTPNT_CO_TOL_PFEAS" => opts.solver_tol,

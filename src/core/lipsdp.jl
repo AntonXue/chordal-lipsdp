@@ -12,7 +12,7 @@ using Printf
 
 # Options
 @with_kw struct LipSdpOptions
-  β :: Int = 0
+  τ :: Int = 0
   max_solve_time :: Float64 = 30.0  # Timeout in seconds
   solver_tol :: Float64 = 1e-6
   verbose :: Bool = false
@@ -25,11 +25,11 @@ function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
 
   # Set up M1
   Tdim = sum(inst.ffnet.fdims)
-  γdim = γlength(Tdim, opts.β)
+  γdim = γlength(Tdim, opts.τ)
   γ = @variable(model, [1:γdim])
   vars[:γ] = γ
   @constraint(model, γ[1:γdim] .>= 0)
-  T = makeT(Tdim, γ, opts.β)
+  T = makeT(Tdim, γ, opts.τ)
   A, B = makeA(inst.ffnet), makeB(inst.ffnet)
   M1 = makeM1(T, A, B, inst.ffnet)
 

@@ -25,9 +25,9 @@ function warmup(; verbose = false)
   warmup_start_time = time()
   xdims = [2;3;3;3;3;3;2]
   ffnet = randomNetwork(xdims)
-  lopts = LipSdpOptions(β=2)
+  lopts = LipSdpOptions(τ=2)
   lsoln = solveLip(ffnet, lopts, verbose=verbose)
-  copts = ChordalSdpOptions(β=2)
+  copts = ChordalSdpOptions(τ=2)
   csoln = solveLip(ffnet, copts, verbose=verbose)
   if verbose; @printf("warmup time: %.3f\n", time() - warmup_start_time) end
 end
