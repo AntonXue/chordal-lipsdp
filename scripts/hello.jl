@@ -46,8 +46,8 @@ ffnet = loadFeedForwardNetwork(args["nnet"])
 Methods.warmup(verbose=true)
 
 # Different betas to try
-# βs = 0:4
-βs = 0:39
+# τs = 0:4
+τs = 0:3
 
 ltimes = VecF64()
 lvals = VecF64()
@@ -55,29 +55,33 @@ lvals = VecF64()
 ctimes = VecF64()
 cvals = VecF64()
 
-for β in βs
+for τ in τs
   loop_start_time = time()
-  @printf("tick for β=%d!\n", β)
-  lopts = LipSdpOptions(β=β)
+  #=
+  @printf("tick for τ=%d!\n", τ)
+  lopts = LipSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-3)
   lsoln = Methods.solveLip(ffnet, lopts)
   push!(ltimes, lsoln.solve_time)
   push!(lvals, lsoln.objective_value)
-  @printf("\tlipsdp \ttime: %.3f, \tvalue: %.3f\n", lsoln.solve_time, lsoln.objective_value)
+  @printf("\tlipsdp \ttime: %.3f, \tvalue: %.3f (%s)\n", lsoln.solve_time, lsoln.objective_value, lsoln.termination_status)
+  =#
+  push!(ltimes, 10)
+  push!(lvals, 10)
 
-  copts = ChordalSdpOptions(β=β)
+  copts = ChordalSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-3)
   csoln = Methods.solveLip(ffnet, copts)
   push!(ctimes, csoln.solve_time)
   push!(cvals, csoln.objective_value)
-  @printf("\tchordl \ttime: %.3f, \tvalue: %.3f\n", csoln.solve_time, csoln.objective_value)
+  @printf("\tchordl \ttime: %.3f, \tvalue: %.3f (%s)\n", csoln.solve_time, csoln.objective_value, csoln.termination_status)
 end
 
 # Plot stuff
 
 labeled_time_lines = [("lipsdp", ltimes); ("chordal", ctimes)]
-Utils.plotLines(βs, labeled_time_lines, saveto="~/Desktop/times.png")
+Utils.plotLines(τs, labeled_time_lines, saveto="~/Desktop/times.png")
 
 labeled_val_lines = [("lipsdp", lvals); ("chordal", cvals)]
-Utils.plotLines(βs, labeled_val_lines, ylogscale=true, saveto="~/Desktop/values.png")
+Utils.plotLines(τs, labeled_val_lines, ylogscale=true, saveto="~/Desktop/values.png")
 
 
 @printf("repl start time: %.3f\n", time() - start_time)
