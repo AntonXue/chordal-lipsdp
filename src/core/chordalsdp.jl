@@ -7,7 +7,7 @@ using Parameters
 using LinearAlgebra
 using JuMP
 using MosekTools
-using Mosek
+using Dualization
 using Printf
 
 # How the construction is done
@@ -15,6 +15,7 @@ using Printf
   τ :: Int = 0
   max_solve_time :: Float64 = 30.0
   solver_tol :: Float64 = 1e-6
+  use_dual :: Bool = true
   verbose :: Bool = false
 end
 
@@ -47,10 +48,6 @@ function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
     vars[Symbol("Z" * string(k))] = Zk
     @SDconstraint(model, Zk <= 0)
     push!(Zs, Zk)
-
-    if opts.verbose
-      @printf("clique %d/%d of size: (%d, %d)\n", k, length(cinfos), size(Zk)[1], size(Zk)[2])
-    end
   end
 
   # Assert the equality constraint and objective
@@ -58,7 +55,17 @@ function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
   Zksum = sum(Ec(kstart, Ckdim, Zdim)' * Zs[k] * Ec(kstart, Ckdim, Zdim) for (k, kstart, Ckdim) in cinfos)
   @constraint(model, M1 + M2 .== Zksum)
   @objective(model, Min, ρ)
-  
+
+  if opts.verbose
+    for (fst, snd) in list_of_constraint_types(model)
+      @printf("\tfst constr: %s\n", fst)
+      @printf("\tsnd constr: %s\n", snd)
+      num_of_cons = num_constraints(model, fst, snd) 
+      @printf("\tnum constrs: %d\n", num_of_cons)
+      @printf("\n")
+    end
+  end
+
   # Return stuff
   setup_time = time() - setup_start_time
   if opts.verbose; @printf("\tsetup time: %.3f\n", setup_time) end
@@ -80,14 +87,25 @@ function run(inst :: QueryInstance, opts :: ChordalSdpOptions)
   total_start_time = time()
 
   # Model setup
-  model = Model(optimizer_with_attributes(
-    Mosek.Optimizer,
-    "QUIET" => true,
-    "MSK_DPAR_SEMIDEFINITE_TOL_APPROX" => 1e-5,
-    "MSK_DPAR_OPTIMIZER_MAX_TIME" => opts.max_solve_time,
-    "INTPNT_CO_TOL_REL_GAP" => opts.solver_tol,
-    "INTPNT_CO_TOL_PFEAS" => opts.solver_tol,
-    "INTPNT_CO_TOL_DFEAS" => opts.solver_tol))
+  if opts.use_dual
+    model = Model(dual_optimizer(optimizer_with_attributes(
+      Mosek.Optimizer,
+      "QUIET" => true,
+      "MSK_DPAR_OPTIMIZER_MAX_TIME" => opts.max_solve_time,
+      "INTPNT_CO_TOL_REL_GAP" => opts.solver_tol,
+      "INTPNT_CO_TOL_PFEAS" => opts.solver_tol,
+      "INTPNT_CO_TOL_DFEAS" => opts.solver_tol)))
+    if opts.verbose; @printf("\tusing dualization\n") end
+  else
+    model = Model(optimizer_with_attributes(
+      Mosek.Optimizer,
+      "QUIET" => true,
+      "MSK_DPAR_OPTIMIZER_MAX_TIME" => opts.max_solve_time,
+      "INTPNT_CO_TOL_REL_GAP" => opts.solver_tol,
+      "INTPNT_CO_TOL_PFEAS" => opts.solver_tol,
+      "INTPNT_CO_TOL_DFEAS" => opts.solver_tol))
+    if opts.verbose; @printf("\tNOT using dualization\n") end
+  end
 
   # Setup and solve
   _, vars, setup_time = setup!(model, inst, opts)

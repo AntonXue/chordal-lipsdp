@@ -3,6 +3,7 @@ module Common
 
 using ..Header
 using LinearAlgebra
+using SparseArrays
 using Printf
 
 # The ith basis vector
@@ -55,9 +56,18 @@ end
 # The T
 function makeT(Tdim :: Int, γ, τ :: Int)
   @assert length(γ) == γlength(Tdim, τ)
-  T = diagm(γ[1:Tdim])
-  # T = Matrix(Diagonal(γ[1:Tdim]))
-  # T = I(Tdim)
+  T = spdiagm(0 => γ[1:Tdim])
+  diag2inds(d) = (sum((Tdim-d+1):Tdim)+1, sum((Tdim-d):Tdim))
+  for d in 1:τ
+    γstart, γend = diag2inds(d)
+    γd = -γ[γstart:γend]
+    T += spdiagm(d => -γd)
+    # T += diagm(d => -γd)
+    T += spdiagm(-d => -γd)
+    # T += diagm(-d => -γd)
+  end
+
+  #=
   if τ > 0
     ijs = [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= τ]
     δts = [e(i,Tdim)' - e(j,Tdim)' for (i,j) in ijs]
@@ -66,8 +76,16 @@ function makeT(Tdim :: Int, γ, τ :: Int)
     # Given a pair i,j calculate its relative index in the γ vector
     pair2ind(i,j) = sum((Tdim-(j-i)+1):Tdim) + i
     v = vec([γ[pair2ind(i,j)] for (i,j) in ijs])
-    T += Δ' * (v .* Δ)
+    T = Δ' * (v .* Δ)
+    T[diagind(T)] = γ[1:Tdim]
+
+    @printf("\tnondiag: v size: %d; Δdim: (%d, %d)\n", length(v), size(Δ)[1], size(Δ)[2])
+
+  else
+    @printf("\tdoing the Diagonal only\n")
+    T = Diagonal(γ[1:Tdim])
   end
+  =#
   return T
 end
 
@@ -75,11 +93,12 @@ end
 function makeM1(T, A, B, ffnet :: FeedForwardNetwork)
   @assert ffnet.type isa ReluNetwork || ffnet.type isa TanhNetwork
   low, high = 0, 1
-  _R11 = -2 * low * high * A' * T * A
-  _R12 = (low + high) * A' * T * B
-  _R21 = _R12'
-  _R22 = -2 * B' * T * B
-  M1 = _R11 + _R12 + _R21 + _R22
+  _Q11 = -2 * low * high * T
+  _Q12 = (low + high) * T
+  _Q21 = _Q12'
+  _Q22 = -2 * T
+  Q = [_Q11 _Q12; _Q21 _Q22]
+  M1 = [A; B]' * Q * [A; B]
   return M1
 end
 
