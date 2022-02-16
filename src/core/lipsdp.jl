@@ -12,6 +12,7 @@ using Printf
 
 # using SCS
 # using ProxSDP
+using CDCS
 
 # Options
 @with_kw struct LipSdpOptions
@@ -19,6 +20,7 @@ using Printf
   max_solve_time :: Float64 = 30.0  # Timeout in seconds
   solver_tol :: Float64 = 1e-6
   use_dual :: Bool = false
+  use_cdcs :: Bool = false
   verbose :: Bool = false
 end
 
@@ -96,6 +98,10 @@ function run(inst :: QueryInstance, opts :: LipSdpOptions)
       "INTPNT_CO_TOL_PFEAS" => opts.solver_tol,
       "INTPNT_CO_TOL_DFEAS" => opts.solver_tol)))
     if opts.verbose; @printf("\tusing dualization\n") end
+  elseif opts.use_cdcs
+    model = Model(with_optimizer(CDCS.Optimizer, verbose=0))
+    set_optimizer_with_attribute(model, "maxIter", 100000)
+    set_optimizer_with_attribute(model, "solver", "dual")
   else
     #=
     model = Model(optimizer_with_attributes(

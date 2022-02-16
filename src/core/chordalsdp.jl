@@ -12,7 +12,7 @@ using Printf
 
 # using SCS
 # using ProxSDP
-using CDCS
+# using CDCS
 
 # How the construction is done
 @with_kw struct ChordalSdpOptions
@@ -116,10 +116,12 @@ function run(inst :: QueryInstance, opts :: ChordalSdpOptions)
       "INTPNT_CO_TOL_DFEAS" => opts.solver_tol)))
     if opts.verbose; @printf("\tusing dualization\n") end
 
+    #=
   elseif opts.use_cdcs
     model = Model(with_optimizer(CDCS.Optimizer, verbose=0))
 
     if opts.verbose; @printf("\tusing CDCS\n") end
+    =#
   else
     #=
     model = Model(optimizer_with_attributes(

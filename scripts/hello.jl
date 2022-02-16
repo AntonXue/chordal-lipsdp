@@ -49,7 +49,7 @@ Methods.warmup(verbose=true)
 
 # Different betas to try
 # τs = 0:4
-τs = 0:4
+τs = 3:10
 
 lnodual_times = VecF64()
 ldual_times = VecF64()
@@ -66,19 +66,22 @@ for τ in τs
   loop_start_time = time()
   @printf("tick for τ=%d!\n", τ)
 
+  #=
   @printf("\tbegin LipSdp (τ=%d) with NO dual\n", τ)
   lopts_nodual = LipSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=false)
   lsoln_nodual = Methods.solveLip(ffnet, lopts_nodual)
   push!(lnodual_times, lsoln_nodual.solve_time)
   push!(lnodual_vals, lsoln_nodual.objective_value)
+  =#
 
   @printf("\n")
   @printf("\tbegin LipSdp (τ=%d) with dual\n", τ)
-  lopts_dual = LipSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=true)
+  lopts_dual = LipSdpOptions(τ=τ, max_solve_time=300.0, solver_tol=1e-4, verbose=true, use_dual=true)
   lsoln_dual = Methods.solveLip(ffnet, lopts_dual)
   push!(ldual_times, lsoln_dual.solve_time)
   push!(ldual_vals, lsoln_dual.objective_value)
 
+  #=
   @printf("\n")
   @printf("\tbegin ChordalSdp (τ=%d) with NO dual\n", τ)
   copts_nodual = ChordalSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=false)
@@ -92,6 +95,7 @@ for τ in τs
   csoln_dual = Methods.solveLip(ffnet, copts_dual)
   push!(cdual_times, csoln_dual.solve_time)
   push!(cdual_vals, csoln_dual.objective_value)
+  =#
 
   @printf("\n--\n\n")
 end
