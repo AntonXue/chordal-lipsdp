@@ -12,6 +12,7 @@ using Printf
 
 using SCS
 using ProxSDP
+using CDCS
 
 # How the construction is done
 @with_kw struct ChordalSdpOptions
@@ -19,6 +20,7 @@ using ProxSDP
   max_solve_time :: Float64 = 30.0
   solver_tol :: Float64 = 1e-6
   use_dual :: Bool = false
+  use_cdcs :: Bool = false
   verbose :: Bool = false
 end
 
@@ -113,6 +115,11 @@ function run(inst :: QueryInstance, opts :: ChordalSdpOptions)
       "INTPNT_CO_TOL_PFEAS" => opts.solver_tol,
       "INTPNT_CO_TOL_DFEAS" => opts.solver_tol)))
     if opts.verbose; @printf("\tusing dualization\n") end
+
+  elseif opts.use_cdcs
+    model = Model(with_optimizer(CDCS.Optimizer, verbose=0))
+
+    if opts.verbose; @printf("\tusing CDCS\n") end
   else
     #=
     model = Model(optimizer_with_attributes(
@@ -137,6 +144,7 @@ function run(inst :: QueryInstance, opts :: ChordalSdpOptions)
       "INTPNT_CO_TOL_DFEAS" => opts.solver_tol))
     if opts.verbose; @printf("\tNOT using dualization\n") end
   end
+
 
   # Setup and solve
   _, vars, setup_time = setup!(model, inst, opts)
