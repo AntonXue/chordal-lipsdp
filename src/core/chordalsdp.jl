@@ -10,8 +10,8 @@ using MosekTools
 using Dualization
 using Printf
 
-using SCS
-using ProxSDP
+# using SCS
+# using ProxSDP
 using CDCS
 
 # How the construction is done
