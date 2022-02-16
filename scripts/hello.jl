@@ -74,12 +74,22 @@ for τ in τs
   push!(lnodual_vals, lsoln_nodual.objective_value)
   =#
 
+  #=
   @printf("\n")
   @printf("\tbegin LipSdp (τ=%d) with dual\n", τ)
   lopts_dual = LipSdpOptions(τ=τ, max_solve_time=300.0, solver_tol=1e-4, verbose=true, use_dual=true)
   lsoln_dual = Methods.solveLip(ffnet, lopts_dual)
   push!(ldual_times, lsoln_dual.solve_time)
   push!(ldual_vals, lsoln_dual.objective_value)
+  =#
+
+
+  @printf("\n")
+  @printf("\tbegin LipSdp (τ=%d) with CDCS\n", τ)
+  lopts_cdcs = LipSdpOptions(τ=τ, max_solve_time=300.0, solver_tol=1e-4, verbose=true, use_cdcs=true)
+  lsoln_cdcs = Methods.solveLip(ffnet, lopts_dual)
+  # push!(ldual_times, lsoln_dual.solve_time)
+   #push!(ldual_vals, lsoln_dual.objective_value)
 
   #=
   @printf("\n")

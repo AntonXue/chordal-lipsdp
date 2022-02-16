@@ -102,6 +102,9 @@ function run(inst :: QueryInstance, opts :: LipSdpOptions)
     model = Model(with_optimizer(CDCS.Optimizer, verbose=0))
     set_optimizer_with_attribute(model, "maxIter", 100000)
     set_optimizer_with_attribute(model, "solver", "dual")
+
+
+    if opts.verbose; @printf("\tusing CDCS\n") end
   else
     #=
     model = Model(optimizer_with_attributes(
