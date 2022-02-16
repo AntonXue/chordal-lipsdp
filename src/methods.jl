@@ -21,14 +21,14 @@ function solveLip(ffnet :: FeedForwardNetwork, opts; verbose = false)
   return soln
 end
 
-function warmup(; verbose = false)
+function warmup(; verbose=false)
   warmup_start_time = time()
   xdims = [2;3;3;3;3;3;2]
   ffnet = randomNetwork(xdims)
-  lopts = LipSdpOptions(τ=2)
-  lsoln = solveLip(ffnet, lopts, verbose=verbose)
-  copts = ChordalSdpOptions(τ=2)
-  csoln = solveLip(ffnet, copts, verbose=verbose)
+  lopts = LipSdpOptions(τ=1, verbose=verbose)
+  lsoln = solveLip(ffnet, lopts)
+  copts = ChordalSdpOptions(τ=1, verbose=verbose)
+  csoln = solveLip(ffnet, copts)
   if verbose; @printf("warmup time: %.3f\n", time() - warmup_start_time) end
 end
 

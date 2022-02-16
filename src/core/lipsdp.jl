@@ -10,12 +10,15 @@ using MosekTools
 using Dualization
 using Printf
 
+using SCS
+using ProxSDP
+
 # Options
 @with_kw struct LipSdpOptions
   τ :: Int = 0
   max_solve_time :: Float64 = 30.0  # Timeout in seconds
   solver_tol :: Float64 = 1e-6
-  use_dual :: Bool = true
+  use_dual :: Bool = false
   verbose :: Bool = false
 end
 
@@ -45,6 +48,7 @@ function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
   @SDconstraint(model, Z <= 0)
   @objective(model, Min, ρ)
 
+  #=
   if opts.verbose
     for (fst, snd) in list_of_constraint_types(model)
       @printf("\tfst constr: %s\n", fst)
@@ -54,10 +58,10 @@ function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
       @printf("\n")
     end
   end
+  =#
 
   # Return information
   setup_time = time() - setup_start_time
-  if opts.verbose; @printf("\tsetup time: %.3f\n", setup_time) end
   return model, vars, setup_time
 end
 
@@ -65,7 +69,6 @@ end
 function solve!(model, vars, opts :: LipSdpOptions)
   optimize!(model)
   summary = solution_summary(model)
-  if opts.verbose; @printf("\tsolve time: %.3f\n", summary.solve_time) end
   values = Dict()
   for (k, v) in vars; values[k] = value.(v) end
   return summary, values
@@ -77,6 +80,14 @@ function run(inst :: QueryInstance, opts :: LipSdpOptions)
 
   # Model setup
   if opts.use_dual
+    #=
+    model = Model(dual_optimizer(optimizer_with_attributes(
+      SCS.Optimizer,
+      "verbose" => 0)))
+    =#
+
+    # model = Model(dual_optimizer(with_optimizer(ProxSDP.Optimizer, log_verbose=false, tol_gap=1e-4, tol_feasibility=1e-4)))
+
     model = Model(dual_optimizer(optimizer_with_attributes(
       Mosek.Optimizer,
       "QUIET" => true,
@@ -86,6 +97,14 @@ function run(inst :: QueryInstance, opts :: LipSdpOptions)
       "INTPNT_CO_TOL_DFEAS" => opts.solver_tol)))
     if opts.verbose; @printf("\tusing dualization\n") end
   else
+    #=
+    model = Model(optimizer_with_attributes(
+      SCS.Optimizer,
+      "verbose" => 0))
+    =#
+
+    # model = Model(with_optimizer(ProxSDP.Optimizer, log_verbose=false, tol_gap=1e-4, tol_feasibility=1e-4))
+
     model = Model(optimizer_with_attributes(
       Mosek.Optimizer,
       "QUIET" => true,
@@ -102,7 +121,13 @@ function run(inst :: QueryInstance, opts :: LipSdpOptions)
 
   # Return
   total_time = time() - total_start_time
-  if opts.verbose; @printf("\ttotal time: %.3f\n", total_time) end
+
+  if opts.verbose
+    @printf("\tsetup time: %.3f\tsolve time: %.3f\ttotal time: %.3f\tvalue: %.3f (%s)\n",
+            setup_time, summary.solve_time, total_time,
+            objective_value(model), string(summary.termination_status))
+  end
+
   return SolutionOutput(
     objective_value = objective_value(model),
     values = values,

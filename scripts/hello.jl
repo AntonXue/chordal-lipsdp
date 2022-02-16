@@ -43,6 +43,7 @@ args = parseArgs()
 ffnet = loadFeedForwardNetwork(args["nnet"])
 
 # Do a warmup of the stuff
+@printf("warming up ...\n")
 Methods.warmup(verbose=true)
 @printf("\n\n")
 
@@ -50,43 +51,69 @@ Methods.warmup(verbose=true)
 # τs = 0:4
 τs = 0:4
 
-ltimes = VecF64()
-lvals = VecF64()
+lnodual_times = VecF64()
+ldual_times = VecF64()
+cnodual_times = VecF64()
+cdual_times = VecF64()
 
-ctimes = VecF64()
-cvals = VecF64()
+lnodual_vals = VecF64()
+ldual_vals = VecF64()
+cnodual_vals = VecF64()
+cdual_vals = VecF64()
+
 
 for τ in τs
   loop_start_time = time()
   @printf("tick for τ=%d!\n", τ)
 
-  @printf("begin LipSdp (τ=%d)\n", τ)
-  lopts = LipSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-4, verbose=true)
-  lsoln = Methods.solveLip(ffnet, lopts)
-  push!(ltimes, lsoln.solve_time)
-  push!(lvals, lsoln.objective_value)
-  @printf("\tlipsdp \ttime: %.3f, \tvalue: %.3f (%s)\n", lsoln.solve_time, lsoln.objective_value, lsoln.termination_status)
-  # push!(ltimes, 10)
-  # push!(lvals, 10)
-  
-  @printf("\n\t--\n\n")
+  @printf("\tbegin LipSdp (τ=%d) with NO dual\n", τ)
+  lopts_nodual = LipSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=false)
+  lsoln_nodual = Methods.solveLip(ffnet, lopts_nodual)
+  push!(lnodual_times, lsoln_nodual.solve_time)
+  push!(lnodual_vals, lsoln_nodual.objective_value)
 
-  @printf("begin ChordalSdp (τ=%d)\n", τ)
-  copts = ChordalSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-4, verbose=true)
-  csoln = Methods.solveLip(ffnet, copts)
-  push!(ctimes, csoln.solve_time)
-  push!(cvals, csoln.objective_value)
-  @printf("\tchordl \ttime: %.3f, \tvalue: %.3f (%s)\n", csoln.solve_time, csoln.objective_value, csoln.termination_status)
+  @printf("\n")
+  @printf("\tbegin LipSdp (τ=%d) with dual\n", τ)
+  lopts_dual = LipSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=true)
+  lsoln_dual = Methods.solveLip(ffnet, lopts_dual)
+  push!(ldual_times, lsoln_dual.solve_time)
+  push!(ldual_vals, lsoln_dual.objective_value)
 
-  @printf("\n\n--\n\n")
+  @printf("\n")
+  @printf("\tbegin ChordalSdp (τ=%d) with NO dual\n", τ)
+  copts_nodual = ChordalSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=false)
+  csoln_nodual = Methods.solveLip(ffnet, copts_nodual)
+  push!(cnodual_times, csoln_nodual.solve_time)
+  push!(cnodual_vals, csoln_nodual.objective_value)
+
+  @printf("\n")
+  @printf("\tbegin ChordalSdp (τ=%d) with dual\n", τ)
+  copts_dual = ChordalSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=true)
+  csoln_dual = Methods.solveLip(ffnet, copts_dual)
+  push!(cdual_times, csoln_dual.solve_time)
+  push!(cdual_vals, csoln_dual.objective_value)
+
+  @printf("\n--\n\n")
 end
 
 # Plot stuff
 
-labeled_time_lines = [("lipsdp", ltimes); ("chordal", ctimes)]
+labeled_time_lines =
+  [
+   ("lipsdp-nodual", lnodual_times);
+   ("lipsdp-dual", ldual_times);
+   ("chordal-nodual", cnodual_times);
+   ("chordal-dual", cdual_times);
+  ]
 Utils.plotLines(τs, labeled_time_lines, saveto="~/Desktop/times.png")
 
-labeled_val_lines = [("lipsdp", lvals); ("chordal", cvals)]
+labeled_val_lines =
+  [
+   ("lipsdp-nodual", lnodual_vals);
+   ("lipsdp-dual", ldual_vals);
+   ("chordal-nodual", cnodual_vals);
+   ("chordal-dual", cdual_vals);
+  ]
 Utils.plotLines(τs, labeled_val_lines, ylogscale=true, saveto="~/Desktop/values.png")
 
 
