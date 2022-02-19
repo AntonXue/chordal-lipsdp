@@ -49,16 +49,16 @@ Methods.warmup(verbose=true)
 
 # Different betas to try
 # τs = 0:4
-τs = 3:10
+τs = 0:7
 
-lnodual_times = VecF64()
+lprimal_times = VecF64()
 ldual_times = VecF64()
-cnodual_times = VecF64()
+cprimal_times = VecF64()
 cdual_times = VecF64()
 
-lnodual_vals = VecF64()
+lprimal_vals = VecF64()
 ldual_vals = VecF64()
-cnodual_vals = VecF64()
+cprimal_vals = VecF64()
 cdual_vals = VecF64()
 
 
@@ -67,38 +67,30 @@ for τ in τs
   @printf("tick for τ=%d!\n", τ)
 
   #=
-  @printf("\tbegin LipSdp (τ=%d) with NO dual\n", τ)
-  lopts_nodual = LipSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=false)
-  lsoln_nodual = Methods.solveLip(ffnet, lopts_nodual)
-  push!(lnodual_times, lsoln_nodual.solve_time)
-  push!(lnodual_vals, lsoln_nodual.objective_value)
+  @printf("\tbegin LipSdp (τ=%d) with primal\n", τ)
+  lopts_primal = LipSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=false)
+  lsoln_primal = Methods.solveLip(ffnet, lopts_primal)
+  push!(lprimal_times, lsoln_primal.solve_time)
+  push!(lprimal_vals, lsoln_primal.objective_value)
   =#
 
-  #=
   @printf("\n")
   @printf("\tbegin LipSdp (τ=%d) with dual\n", τ)
-  lopts_dual = LipSdpOptions(τ=τ, max_solve_time=300.0, solver_tol=1e-4, verbose=true, use_dual=true)
+  lopts_dual = LipSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-4, verbose=true, use_dual=true)
   lsoln_dual = Methods.solveLip(ffnet, lopts_dual)
   push!(ldual_times, lsoln_dual.solve_time)
   push!(ldual_vals, lsoln_dual.objective_value)
-  =#
+
 
 
   @printf("\n")
-  @printf("\tbegin LipSdp (τ=%d) with CDCS\n", τ)
-  lopts_cdcs = LipSdpOptions(τ=τ, max_solve_time=300.0, solver_tol=1e-4, verbose=true, use_cdcs=true)
-  lsoln_cdcs = Methods.solveLip(ffnet, lopts_dual)
-  # push!(ldual_times, lsoln_dual.solve_time)
-   #push!(ldual_vals, lsoln_dual.objective_value)
+  @printf("\tbegin ChordalSdp (τ=%d) with primal\n", τ)
+  copts_primal = ChordalSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-4, verbose=true, use_dual=false)
+  csoln_primal = Methods.solveLip(ffnet, copts_primal)
+  push!(cprimal_times, csoln_primal.solve_time)
+  push!(cprimal_vals, csoln_primal.objective_value)
 
   #=
-  @printf("\n")
-  @printf("\tbegin ChordalSdp (τ=%d) with NO dual\n", τ)
-  copts_nodual = ChordalSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=false)
-  csoln_nodual = Methods.solveLip(ffnet, copts_nodual)
-  push!(cnodual_times, csoln_nodual.solve_time)
-  push!(cnodual_vals, csoln_nodual.objective_value)
-
   @printf("\n")
   @printf("\tbegin ChordalSdp (τ=%d) with dual\n", τ)
   copts_dual = ChordalSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=true)
@@ -114,21 +106,21 @@ end
 
 labeled_time_lines =
   [
-   ("lipsdp-nodual", lnodual_times);
+   # ("lipsdp-primal", lprimal_times);
    ("lipsdp-dual", ldual_times);
-   ("chordal-nodual", cnodual_times);
-   ("chordal-dual", cdual_times);
+   ("chordal-primal", cprimal_times);
+   # ("chordal-dual", cdual_times);
   ]
-Utils.plotLines(τs, labeled_time_lines, saveto="~/Desktop/times.png")
+  Utils.plotLines(τs, labeled_time_lines, title=args["nnet"], saveto="~/Desktop/times.png")
 
 labeled_val_lines =
   [
-   ("lipsdp-nodual", lnodual_vals);
+   # ("lipsdp-primal", lprimal_vals);
    ("lipsdp-dual", ldual_vals);
-   ("chordal-nodual", cnodual_vals);
-   ("chordal-dual", cdual_vals);
+   ("chordal-primal", cprimal_vals);
+   # ("chordal-dual", cdual_vals);
   ]
-Utils.plotLines(τs, labeled_val_lines, ylogscale=true, saveto="~/Desktop/values.png")
+Utils.plotLines(τs, labeled_val_lines, ylogscale=true, title=args["nnet"], saveto="~/Desktop/values.png")
 
 
 @printf("repl start time: %.3f\n", time() - start_time)

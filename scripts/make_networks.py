@@ -19,8 +19,8 @@ np.random.seed(1234)
 INPUT_DIM = 2
 OUTPUT_DIM = 2
 # LAYER_DIMS = [5, 10, 15, 20]
-LAYER_DIMS = [20, 40, 60, 80, 100]
-NUM_LAYERS = [2, 3, 4, 5, 6, 7, 8, 9, 10]
+LAYER_DIMS = [20, 40, 60]
+NUM_LAYERS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
 
 # Generate a random network given the number of layers, input, output, and layer dimensions
 def random_params(input_dim, output_dim, layer_dim, num_layers, sigma):
@@ -33,7 +33,7 @@ def random_params(input_dim, output_dim, layer_dim, num_layers, sigma):
 def enumerate_random_params():
   for layer_dim in LAYER_DIMS:
     for num_layers in NUM_LAYERS:
-      sigma = 2 / math.sqrt(layer_dim + num_layers)
+      sigma = 1.5 / math.sqrt(layer_dim + num_layers)
       input_dim = INPUT_DIM
       output_dim = OUTPUT_DIM
       xdims, Ws, bs = random_params(input_dim, output_dim, layer_dim, num_layers, sigma)

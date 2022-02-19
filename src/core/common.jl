@@ -56,6 +56,7 @@ end
 # The T
 function makeT(Tdim :: Int, γ, τ :: Int)
   @assert length(γ) == γlength(Tdim, τ)
+  #=
   T = spdiagm(0 => γ[1:Tdim])
   diag2inds(d) = (sum((Tdim-d+1):Tdim)+1, sum((Tdim-d):Tdim))
   for d in 1:τ
@@ -66,8 +67,8 @@ function makeT(Tdim :: Int, γ, τ :: Int)
     T += spdiagm(-d => -γd)
     # T += diagm(-d => -γd)
   end
+  =#
 
-  #=
   if τ > 0
     ijs = [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= τ]
     δts = [e(i,Tdim)' - e(j,Tdim)' for (i,j) in ijs]
@@ -82,10 +83,9 @@ function makeT(Tdim :: Int, γ, τ :: Int)
     @printf("\tnondiag: v size: %d; Δdim: (%d, %d)\n", length(v), size(Δ)[1], size(Δ)[2])
 
   else
-    @printf("\tdoing the Diagonal only\n")
+    # @printf("\tdoing the Diagonal only\n")
     T = Diagonal(γ[1:Tdim])
   end
-  =#
   return T
 end
 

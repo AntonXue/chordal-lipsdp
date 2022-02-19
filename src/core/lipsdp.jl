@@ -10,17 +10,12 @@ using MosekTools
 using Dualization
 using Printf
 
-# using SCS
-# using ProxSDP
-using CDCS
-
 # Options
 @with_kw struct LipSdpOptions
   τ :: Int = 0
   max_solve_time :: Float64 = 30.0  # Timeout in seconds
   solver_tol :: Float64 = 1e-6
   use_dual :: Bool = false
-  use_cdcs :: Bool = false
   verbose :: Bool = false
 end
 
@@ -50,18 +45,6 @@ function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
   @SDconstraint(model, Z <= 0)
   @objective(model, Min, ρ)
 
-  #=
-  if opts.verbose
-    for (fst, snd) in list_of_constraint_types(model)
-      @printf("\tfst constr: %s\n", fst)
-      @printf("\tsnd constr: %s\n", snd)
-      num_of_cons = num_constraints(model, fst, snd) 
-      @printf("\tnum constrs: %d\n", num_of_cons)
-      @printf("\n")
-    end
-  end
-  =#
-
   # Return information
   setup_time = time() - setup_start_time
   return model, vars, setup_time
@@ -80,55 +63,30 @@ end
 function run(inst :: QueryInstance, opts :: LipSdpOptions)
   total_start_time = time()
 
-  # Model setup
+  # Model setup with dual
   if opts.use_dual
-    #=
-    model = Model(dual_optimizer(optimizer_with_attributes(
-      SCS.Optimizer,
-      "verbose" => 0)))
-    =#
+    model = Model(dual_optimizer(optimizer_with_attributes(Mosek.Optimizer)))
+    set_optimizer_attribute(model, "QUIET", true)
+    set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
+    set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
+    set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_tol)
+    set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_tol)
+    if opts.verbose; @printf("\tlipsdp model using dual\n") end
 
-    # model = Model(dual_optimizer(with_optimizer(ProxSDP.Optimizer, log_verbose=false, tol_gap=1e-4, tol_feasibility=1e-4)))
-
-    model = Model(dual_optimizer(optimizer_with_attributes(
-      Mosek.Optimizer,
-      "QUIET" => true,
-      "MSK_DPAR_OPTIMIZER_MAX_TIME" => opts.max_solve_time,
-      "INTPNT_CO_TOL_REL_GAP" => opts.solver_tol,
-      "INTPNT_CO_TOL_PFEAS" => opts.solver_tol,
-      "INTPNT_CO_TOL_DFEAS" => opts.solver_tol)))
-    if opts.verbose; @printf("\tusing dualization\n") end
-  elseif opts.use_cdcs
-    model = Model(with_optimizer(CDCS.Optimizer, verbose=0))
-    set_optimizer_with_attribute(model, "maxIter", 100000)
-    set_optimizer_with_attribute(model, "solver", "dual")
-
-
-    if opts.verbose; @printf("\tusing CDCS\n") end
+  # Model setup as primal
   else
-    #=
-    model = Model(optimizer_with_attributes(
-      SCS.Optimizer,
-      "verbose" => 0))
-    =#
-
-    # model = Model(with_optimizer(ProxSDP.Optimizer, log_verbose=false, tol_gap=1e-4, tol_feasibility=1e-4))
-
-    model = Model(optimizer_with_attributes(
-      Mosek.Optimizer,
-      "QUIET" => true,
-      "MSK_DPAR_OPTIMIZER_MAX_TIME" => opts.max_solve_time,
-      "INTPNT_CO_TOL_REL_GAP" => opts.solver_tol,
-      "INTPNT_CO_TOL_PFEAS" => opts.solver_tol,
-      "INTPNT_CO_TOL_DFEAS" => opts.solver_tol))
-    if opts.verbose; @printf("\tNOT using dualization\n") end
+    model = Model(optimizer_with_attributes(Mosek.Optimizer))
+    set_optimizer_attribute(model, "QUIET", true)
+    set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
+    set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
+    set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_tol)
+    set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_tol)
+    if opts.verbose; @printf("\tlipsdp model using primal\n") end
   end
 
   # Setup and solve
   _, vars, setup_time = setup!(model, inst, opts)
   summary, values = solve!(model, vars, opts)
-
-  # Return
   total_time = time() - total_start_time
 
   if opts.verbose
