@@ -3,12 +3,12 @@ module FastNDeepLipSdp
 using LinearAlgebra
 using Printf
 
-include("core.jl");
-include("utils.jl");
+include("Stuff.jl");
+include("Utils.jl");
 
-using Reexport
-@reexport using .Core
-@reexport using .Utils
+import Reexport
+Reexport.@reexport using .Stuff
+Reexport.@reexport using .Utils
 
 # Solve a problem instance depending on what kind of options we give it
 function solveLip(ffnet :: NeuralNetwork, opts; verbose = false)

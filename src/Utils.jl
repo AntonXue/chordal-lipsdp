@@ -6,8 +6,8 @@ using LinearAlgebra
 using Random
 using Plots
 
-using ..Core
-include("utils/nnet_parser.jl"); using .NNetParser
+using ..Stuff
+include("Utils/nnet_parser.jl"); using .NNetParser
 
 pyplot()
 
@@ -89,7 +89,8 @@ end
 function loadNeuralNetwork(nnet_filepath :: String)
   nnet = NNetParser.NNet(nnet_filepath)
   Ms = [[nnet.weights[k] nnet.biases[k]] for k in 1:nnet.numLayers]
-  ffnet = NeuralNetwork(activ=ReluActivation(), xdims=nnet.layerSizes, Ms=Ms)
+  xdims = Vector{Int}(nnet.layerSizes)
+  ffnet = NeuralNetwork(activ=ReluActivation(), xdims=xdims, Ms=Ms)
   return ffnet
 end
 

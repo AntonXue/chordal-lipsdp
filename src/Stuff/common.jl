@@ -5,18 +5,18 @@ using Printf
 # The ith basis vector
 function e(i :: Int, dim :: Int)
   @assert 1 <= i <= dim
-  e = zeros(dim)
+  e = spzeros(dim)
   e[i] = 1
   return e
 end
 
 # The ith block index matrix
-function E(i :: Int, dims :: Vector{Int})
+function E(i :: Int, dims :: VecInt)
   @assert 1 <= i <= length(dims)
   width = sum(dims)
   low = sum(dims[1:i-1]) + 1
   high = sum(dims[1:i])
-  E = zeros(dims[i], width)
+  E = spzeros(dims[i], width)
   E[1:dims[i], low:high] = I(dims[i])
   return E
 end

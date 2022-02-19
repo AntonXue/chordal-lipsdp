@@ -1,9 +1,9 @@
-module Core
+module Stuff
 
-include("core/header.jl");
-include("core/common.jl");
-include("core/lipsdp.jl");
-include("core/chordalsdp.jl");
+include("Stuff/header.jl");
+include("Stuff/common.jl");
+include("Stuff/lipsdp.jl");
+include("Stuff/chordalsdp.jl");
 
 # Type definitions in core/header.jl
 export VecInt, VecF64, MatF64

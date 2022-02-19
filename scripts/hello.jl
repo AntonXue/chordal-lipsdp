@@ -4,7 +4,7 @@ using LinearAlgebra
 using ArgParse
 using Printf
 
-include("../src/fast_n_deep_lipsdp.jl"); using .FastNDeepLipSdp
+include("../src/FastNDeepLipSdp.jl"); using .FastNDeepLipSdp
 
 #
 function parseArgs()
@@ -46,15 +46,15 @@ warmup(verbose=true)
 # τs = 0:4
 τs = 0:7
 
-lprimal_times = VecF64()
-ldual_times = VecF64()
-cprimal_times = VecF64()
-cdual_times = VecF64()
+lprimal_times = VecF64([])
+ldual_times = VecF64([])
+cprimal_times = VecF64([])
+cdual_times = VecF64([])
 
-lprimal_vals = VecF64()
-ldual_vals = VecF64()
-cprimal_vals = VecF64()
-cdual_vals = VecF64()
+lprimal_vals = VecF64([])
+ldual_vals = VecF64([])
+cprimal_vals = VecF64([])
+cdual_vals = VecF64([])
 
 
 for τ in τs

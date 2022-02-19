@@ -4,7 +4,7 @@ using LinearAlgebra
 using ArgParse
 using Printf
 
-include("../src/fast_n_deep_lipsdp.jl"); using .FastNDeepLipSdp
+include("../src/FastNDeepLipSdp.jl"); using .FastNDeepLipSdp
 
 #
 function parseArgs()
