@@ -2,16 +2,17 @@
 # Should only be used within main.jl or a similar file
 module Utils
 
-using ..Header
-using ..NNetParser
 using LinearAlgebra
 using Random
 using Plots
 
+using ..Core
+include("utils/nnet_parser.jl"); using .NNetParser
+
 pyplot()
 
 # Generate a random network given the desired dimensions at each layer
-function randomNetwork(xdims :: VecInt; type :: NetworkType = ReluNetwork(), σ :: Float64 = 1.0)
+function randomNetwork(xdims :: VecInt; activ :: Activation = ReluActivation(), σ :: Float64 = 1.0)
   @assert length(xdims) > 1
   Ms = Vector{Any}()
   for k = 1:length(xdims) - 1
@@ -19,15 +20,15 @@ function randomNetwork(xdims :: VecInt; type :: NetworkType = ReluNetwork(), σ 
     Mk = randn(xdims[k+1], xdims[k]+1) * σ
     push!(Ms, Mk)
   end
-  return FeedForwardNetwork(type=type, xdims=xdims, Ms=Ms)
+  return NeuralNetwork(activ=activ, xdims=xdims, Ms=Ms)
 end
 
 # Run a feedforward net on an initial input and give the output
-function runNetwork(x1, ffnet :: FeedForwardNetwork)
+function runNetwork(x1, ffnet :: NeuralNetwork)
   function ϕ(x)
-    if ffnet.type isa ReluNetwork
+    if ffnet.activ isa ReluActivation
       return max.(x, 0)
-    elseif ffnet.type isa TanhNetwork
+    elseif ffnet.activ isa TanhActivation
       return tanh.(x)
     else
       error("unsupported network: " * string(ffnet))
@@ -46,7 +47,7 @@ function runNetwork(x1, ffnet :: FeedForwardNetwork)
 end
 
 # Generate trajectories from a unit box
-function randomTrajectories(N :: Int, ffnet :: FeedForwardNetwork)
+function randomTrajectories(N :: Int, ffnet :: NeuralNetwork)
   Random.seed!(1234)
   x1s = 2 * (rand(ffnet.xdims[1], N) .- 0.5) # Unit box
   # x1s = x1s ./ norm(x1s) # Unit vectors
@@ -55,7 +56,7 @@ function randomTrajectories(N :: Int, ffnet :: FeedForwardNetwork)
 end
 
 # Plot some data to a file
-function plotRandomTrajectories(N :: Int, ffnet :: FeedForwardNetwork, imgfile="~/Desktop/hello.png")
+function plotRandomTrajectories(N :: Int, ffnet :: NeuralNetwork, imgfile="~/Desktop/hello.png")
   # Make sure we can actually plot these in 2D
   @assert ffnet.xdims[end] == 2
   xfs = randomTrajectories(N, ffnet)
@@ -84,11 +85,11 @@ function plotLines(xs, labeled_lines :: Vector{Tuple{String, VecF64}};
   return plt
 end
 
-# Convert NNet to FeedForwardNetwork + BoxInput
-function loadFeedForwardNetwork(nnet_filepath :: String)
+# Convert NNet to NeuralNetwork + BoxInput
+function loadNeuralNetwork(nnet_filepath :: String)
   nnet = NNetParser.NNet(nnet_filepath)
   Ms = [[nnet.weights[k] nnet.biases[k]] for k in 1:nnet.numLayers]
-  ffnet = FeedForwardNetwork(type=ReluNetwork(), xdims=nnet.layerSizes, Ms=Ms)
+  ffnet = NeuralNetwork(activ=ReluActivation(), xdims=nnet.layerSizes, Ms=Ms)
   return ffnet
 end
 
@@ -96,7 +97,7 @@ end
 export randomNetwork
 export runNetwork, randomTrajectories
 export plotRandomTrajectories, plotLines
-export loadFeedForwardNetwork
+export loadNeuralNetwork
 
 end # End module
 

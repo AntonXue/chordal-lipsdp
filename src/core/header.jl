@@ -1,8 +1,4 @@
-# Define a bunch of types that we would like to have around
-module Header
-
 using Parameters
-using Printf
 
 # Helpful types
 const VecInt = Vector{Int}
@@ -10,14 +6,14 @@ const VecF64 = Vector{Float64}
 const MatF64 = Matrix{Float64}
 
 # Different types of networks
-abstract type NetworkType end
-struct ReluNetwork <: NetworkType end
-struct TanhNetwork <: NetworkType end
+abstract type Activation end
+struct ReluActivation <: Activation end
+struct TanhActivation <: Activation end
 
 # Generic neural network supertype
-@with_kw struct FeedForwardNetwork
+@with_kw struct NeuralNetwork
   # The type of the network
-  type :: NetworkType
+  activ :: Activation
 
   # The state vector dimension at start of each layer
   xdims :: VecInt
@@ -38,7 +34,7 @@ end
 
 # Query instance
 @with_kw struct QueryInstance
-  ffnet :: FeedForwardNetwork
+  ffnet :: NeuralNetwork
 end
 
 # The solution that is to be output by an algorithm
@@ -51,12 +47,4 @@ end
   setup_time :: Float64
   solve_time :: Float64
 end
-
-# Export suff
-export VecInt, VecF64, MatF64
-export NetworkType, ReluNetwork, TanhNetwork, FeedForwardNetwork
-export QueryInstance
-export SolutionOutput
-
-end # End module
 

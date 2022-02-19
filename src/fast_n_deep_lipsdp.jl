@@ -1,23 +1,20 @@
-module Methods
-
-using ..Header
-using ..Common
-using ..LipSdp
-using ..ChordalSdp
-using ..Utils
+module FastNDeepLipSdp
 
 using LinearAlgebra
 using Printf
 
+include("core.jl");
+include("utils.jl");
+
+using Reexport
+@reexport using .Core
+@reexport using .Utils
+
 # Solve a problem instance depending on what kind of options we give it
-function solveLip(ffnet :: FeedForwardNetwork, opts; verbose = false)
+function solveLip(ffnet :: NeuralNetwork, opts; verbose = false)
   @assert (opts isa LipSdpOptions) || (opts isa ChordalSdpOptions)
   inst = QueryInstance(ffnet=ffnet)
-  if opts isa LipSdpOptions
-    soln = LipSdp.run(inst, opts)
-  else
-    soln = ChordalSdp.run(inst, opts)
-  end
+  soln = runQuery(inst, opts) # Multiple dispatch based on opts type
   return soln
 end
 
@@ -32,9 +29,7 @@ function warmup(; verbose=false)
   if verbose; @printf("warmup time: %.3f\n", time() - warmup_start_time) end
 end
 
-
-export solveLip
-export warmup
+export solveLip, warmup
 
 end
 

@@ -1,15 +1,10 @@
 start_time = time()
-include("../src/core/header.jl"); using .Header
-include("../src/core/common.jl"); using .Common
-include("../src/core/lipsdp.jl"); using .LipSdp
-include("../src/core/chordalsdp.jl"); using .ChordalSdp
-include("../src/nnet-parser.jl"); using .NNetParser
-include("../src/utils.jl"); using .Utils
-include("../src/methods.jl"); using .Methods
 
 using LinearAlgebra
 using ArgParse
 using Printf
+
+include("../src/fast_n_deep_lipsdp.jl"); using .FastNDeepLipSdp
 
 #
 function parseArgs()
@@ -40,11 +35,11 @@ args = parseArgs()
 
 @printf("import loading time: %.3f\n", time() - start_time)
 
-ffnet = loadFeedForwardNetwork(args["nnet"])
+ffnet = loadNeuralNetwork(args["nnet"])
 
 # Do a warmup of the stuff
 @printf("warming up ...\n")
-Methods.warmup(verbose=true)
+warmup(verbose=true)
 @printf("\n\n")
 
 # Different betas to try
@@ -69,7 +64,7 @@ for τ in τs
   #=
   @printf("\tbegin LipSdp (τ=%d) with primal\n", τ)
   lopts_primal = LipSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=false)
-  lsoln_primal = Methods.solveLip(ffnet, lopts_primal)
+  lsoln_primal = solveLip(ffnet, lopts_primal)
   push!(lprimal_times, lsoln_primal.solve_time)
   push!(lprimal_vals, lsoln_primal.objective_value)
   =#
@@ -77,7 +72,7 @@ for τ in τs
   @printf("\n")
   @printf("\tbegin LipSdp (τ=%d) with dual\n", τ)
   lopts_dual = LipSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-4, verbose=true, use_dual=true)
-  lsoln_dual = Methods.solveLip(ffnet, lopts_dual)
+  lsoln_dual = solveLip(ffnet, lopts_dual)
   push!(ldual_times, lsoln_dual.solve_time)
   push!(ldual_vals, lsoln_dual.objective_value)
 
@@ -86,7 +81,7 @@ for τ in τs
   @printf("\n")
   @printf("\tbegin ChordalSdp (τ=%d) with primal\n", τ)
   copts_primal = ChordalSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-4, verbose=true, use_dual=false)
-  csoln_primal = Methods.solveLip(ffnet, copts_primal)
+  csoln_primal = solveLip(ffnet, copts_primal)
   push!(cprimal_times, csoln_primal.solve_time)
   push!(cprimal_vals, csoln_primal.objective_value)
 
@@ -94,7 +89,7 @@ for τ in τs
   @printf("\n")
   @printf("\tbegin ChordalSdp (τ=%d) with dual\n", τ)
   copts_dual = ChordalSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=true)
-  csoln_dual = Methods.solveLip(ffnet, copts_dual)
+  csoln_dual = solveLip(ffnet, copts_dual)
   push!(cdual_times, csoln_dual.solve_time)
   push!(cdual_vals, csoln_dual.objective_value)
   =#

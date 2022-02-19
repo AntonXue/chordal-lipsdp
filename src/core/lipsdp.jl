@@ -1,8 +1,3 @@
-# Implementation of LipSdp
-module LipSdp
-
-using ..Header
-using ..Common
 using Parameters
 using LinearAlgebra
 using JuMP
@@ -60,7 +55,7 @@ function solve!(model, vars, opts :: LipSdpOptions)
 end
 
 # The interface to call
-function run(inst :: QueryInstance, opts :: LipSdpOptions)
+function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
   total_start_time = time()
 
   # Model setup with dual
@@ -104,10 +99,4 @@ function run(inst :: QueryInstance, opts :: LipSdpOptions)
     setup_time = setup_time,
     solve_time = summary.solve_time)
 end
-
-#
-export LipSdpOptions, WholeTSetup, SummedXSetup
-export setup!, solve!, run
-
-end # End module
 

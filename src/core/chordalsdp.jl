@@ -1,8 +1,3 @@
-# Implmenetation of a split version of LipSdp
-module ChordalSdp
-
-using ..Header
-using ..Common
 using Parameters
 using LinearAlgebra
 using JuMP
@@ -72,7 +67,7 @@ function solve!(model, vars, opts :: ChordalSdpOptions)
 end
 
 # The interface to call
-function run(inst :: QueryInstance, opts :: ChordalSdpOptions)
+function runQuery(inst :: QueryInstance, opts :: ChordalSdpOptions)
   total_start_time = time()
 
   # Model setup
@@ -115,9 +110,4 @@ function run(inst :: QueryInstance, opts :: ChordalSdpOptions)
     setup_time = setup_time,
     solve_time = summary.solve_time)
 end
-
-export ChordalSdpOptions
-export run
-
-end # End module
 

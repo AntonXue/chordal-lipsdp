@@ -1,7 +1,3 @@
-# Some functionalities that will be shared across different algorithms
-module Common
-
-using ..Header
 using LinearAlgebra
 using SparseArrays
 using Printf
@@ -35,14 +31,14 @@ function Ec(k :: Int, size :: Int, dim :: Int)
 end
 
 # Make the A block matrix
-function makeA(ffnet :: FeedForwardNetwork)
+function makeA(ffnet :: NeuralNetwork)
   Ws = [M[1:end, 1:end-1] for M in ffnet.Ms]
   A = sum(E(k, ffnet.fdims)' * Ws[k] * E(k, ffnet.edims) for k in 1:(ffnet.K-1))
   return A
 end
 
 # Make the B block matrix
-function makeB(ffnet :: FeedForwardNetwork)
+function makeB(ffnet :: NeuralNetwork)
   B = sum(E(k, ffnet.fdims)' * E(k+1, ffnet.edims) for k in 1:(ffnet.K-1))
   return B
 end
@@ -56,19 +52,6 @@ end
 # The T
 function makeT(Tdim :: Int, γ, τ :: Int)
   @assert length(γ) == γlength(Tdim, τ)
-  #=
-  T = spdiagm(0 => γ[1:Tdim])
-  diag2inds(d) = (sum((Tdim-d+1):Tdim)+1, sum((Tdim-d):Tdim))
-  for d in 1:τ
-    γstart, γend = diag2inds(d)
-    γd = -γ[γstart:γend]
-    T += spdiagm(d => -γd)
-    # T += diagm(d => -γd)
-    T += spdiagm(-d => -γd)
-    # T += diagm(-d => -γd)
-  end
-  =#
-
   if τ > 0
     ijs = [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= τ]
     δts = [e(i,Tdim)' - e(j,Tdim)' for (i,j) in ijs]
@@ -79,19 +62,15 @@ function makeT(Tdim :: Int, γ, τ :: Int)
     v = vec([γ[pair2ind(i,j)] for (i,j) in ijs])
     T = Δ' * (v .* Δ)
     T[diagind(T)] = γ[1:Tdim]
-
-    @printf("\tnondiag: v size: %d; Δdim: (%d, %d)\n", length(v), size(Δ)[1], size(Δ)[2])
-
   else
-    # @printf("\tdoing the Diagonal only\n")
     T = Diagonal(γ[1:Tdim])
   end
   return T
 end
 
 # Construct M1, or smaller variants depending on what is queried with
-function makeM1(T, A, B, ffnet :: FeedForwardNetwork)
-  @assert ffnet.type isa ReluNetwork || ffnet.type isa TanhNetwork
+function makeM1(T, A, B, ffnet :: NeuralNetwork)
+  @assert ffnet.activ isa ReluActivation || ffnet.activ isa TanhActivation
   low, high = 0, 1
   _Q11 = -2 * low * high * T
   _Q12 = (low + high) * T
@@ -103,7 +82,7 @@ function makeM1(T, A, B, ffnet :: FeedForwardNetwork)
 end
 
 # Construct M2
-function makeM2(ρ, ffnet :: FeedForwardNetwork)
+function makeM2(ρ, ffnet :: NeuralNetwork)
   E1 = E(1, ffnet.edims)
   EK = E(ffnet.K, ffnet.edims)
   WK = ffnet.Ms[ffnet.K][1:end, 1:end-1]
@@ -114,7 +93,7 @@ function makeM2(ρ, ffnet :: FeedForwardNetwork)
 end
 
 # Calculate the start and size of each clique
-function makeCliqueInfos(b, ffnet :: FeedForwardNetwork)
+function makeCliqueInfos(b, ffnet :: NeuralNetwork)
   edims = ffnet.edims
   Zdim = sum(edims)
   clique_infos = Vector{Tuple{Int, Int, Int}}()
@@ -130,13 +109,4 @@ function makeCliqueInfos(b, ffnet :: FeedForwardNetwork)
   end
   return clique_infos
 end
-
-
-# A function for making T; smaller instances of Tk can also be made using this
-export e, E, Ec
-export makeA, makeB
-export γlength, makeT, makeM1, makeM2
-export makeCliqueInfos
-
-end # End module
 
