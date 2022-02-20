@@ -27,10 +27,14 @@ args = parseArgs()
 ffnet = loadNeuralNetwork(args["nnet"])
 
 inst = QueryInstance(ffnet=ffnet)
-admm_opts = AdmmSdpOptions(τ=2)
+admm_opts = AdmmSdpOptions(τ=2, verbose=true, max_steps=3000)
+
+# Load this just in case
+lip_opts = LipSdpOptions(τ=admm_opts.τ, verbose=true)
+
+# init_params, init_time = initAdmmParams(inst, admm_opts)
+# cache, cache_time = initAdmmCache(inst, init_params, admm_opts)
+admm_soln = runQuery(inst, admm_opts)
 
 
-init_params, init_time = initAdmmParams(inst, admm_opts)
-
-cache, cache_time = initAdmmCache(inst, init_params, admm_opts)
 

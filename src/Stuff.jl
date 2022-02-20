@@ -18,8 +18,11 @@ export γlength, makeT, makeM1, makeM2, makeZ
 export makeCliqueInfos
 
 # Method-specific types and polymorphic functions
-export LipSdpOptions, ChordalSdpOptions, AdmmSdpOptions, AdmmParams
+export LipSdpOptions, ChordalSdpOptions
 export setup!, solve!, runQuery
+
+# ADMM-specific stuff
+export AdmmSdpOptions, AdmmStatus, AdmmSummary, AdmmParams, AdmmCache
 export initAdmmParams, initAdmmCache
 
 end

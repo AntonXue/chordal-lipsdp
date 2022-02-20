@@ -1,19 +1,43 @@
 using Parameters
 using LinearAlgebra
 using SparseArrays
+using JuMP
+using MosekTools
 using Printf
 
+# Options for ADMM
 @with_kw struct AdmmSdpOptions
   τ :: Int = 0
   lagρ :: Float64 = 1.0
-  max_iters :: Int = 200
+  max_steps :: Int = 200
   
-  solver_X_max_time :: Float64 = 60.0
+  max_solver_X_time :: Float64 = 60.0
   solver_X_tol :: Float64 = 1e-4
   cholesky_reg_ε :: Float64 = 1e-2
   verbose :: Bool = false
 end
 
+# Summary of the ADMM performance
+abstract type AdmmStatus end
+struct MaxStepsReached <: AdmmStatus end
+@with_kw struct SmallErrors <: AdmmStatus
+  errc :: Float64
+  errλ :: Float64
+end
+
+@with_kw struct AdmmSummary
+  steps_taken :: Int
+  termination_status :: AdmmStatus
+  total_step_time :: Float64
+  total_X_time :: Float64
+  total_Y_time :: Float64
+  total_Z_time :: Float64
+  avg_X_time :: Float64
+  avg_Y_time :: Float64
+  avg_Z_time :: Float64
+end
+
+# Parameters during stepation
 @with_kw mutable struct AdmmParams
   # Mutable parts
   γ :: VecF64
@@ -24,8 +48,10 @@ end
   # The stuff you shouldn't mutate
   γdim :: Int = length(γ)
   cinfos :: Vector{Tuple{Int, Int, Int}} # k, kstart, Ckdim
+  num_cliques :: Int = length(cinfos)
 end
 
+# The cache that we precompute
 @with_kw struct AdmmCache
   J :: SpMatF64
   zaff :: SpVecF64
@@ -37,7 +63,7 @@ end
   diagL_hots :: BitArray{1}
 end
 
-
+# Initialize parameters
 function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
   init_start_time = time()
   
@@ -56,7 +82,7 @@ function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
   return params, init_time
 end
 
-
+# Initialize the cache
 function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: AdmmSdpOptions)
   cache_start_time = time()
 
@@ -124,6 +150,11 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
   return cache, cache_time
 end
 
+# Make z vector given the cache
+function makez(params :: AdmmParams, cache :: AdmmCache)
+  return cache.J * params.γ + cache.zaff
+end
+
 # Nonnegative projection
 function projRplus(γ :: VecF64)
   return max.(γ, 0)
@@ -143,10 +174,179 @@ end
 function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   model = Model(Mosek.Optimizer)
   set_optimizer_attribute(model, "QUIET", true)
-  set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
-  set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
-  set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_tol)
-  set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_tol)
+  set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solver_X_time)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_X_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_X_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_X_tol)
+
+  # Set up the variables
+  var_γ = @variable(model, [1:params.γdim])
+  @constraint(model, var_γ[1:params.γdim] .>= 0)
+
+  var_vs = Vector{Any}()
+  for (_, _, Ckdim) in params.cinfos
+    var_vk = @variable(model, [1:(Ckdim^2)])
+    push!(var_vs, var_vk)
+  end
+
+  @assert params.num_cliques == length(var_vs) == length(cache.Hs)
+
+  # Equality constraints
+  z = makez(params, cache)
+  vksum = sum(cache.Hs[k]' * var_vs[k] for k in 1:params.num_cliques)
+  @constraint(model, z .== vksum)
+
+  # The objective
+  norms = @variable(model, [1:params.num_cliques])
+  for k in 1:params.num_cliques
+    termk = params.zs[k] - var_vs[k] + (params.λs[k] / opts.lagρ)
+    @constraint(model, [norms[k]; termk] in SecondOrderCone())
+  end
+
+  obj = (0.5 * var_γ[end]^2) + sum(norms[k]^2 for k in 1:params.num_cliques)
+  @objective(model, Min, obj)
+
+  # Solve and return
+  optimize!(model)
+  new_γ = value.(var_γ)
+  new_vs = [value.(var_vs[k]) for k in 1:params.num_cliques]
+  return new_γ, new_vs
 end
 
+# Y = {z1, ..., zp}
+function stepY(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  tmps = [params.vs[k] - (params.λs[k] / opts.lagρ) for k in 1:params.num_cliques]
+  new_zs = projectNsd.(tmps)
+  return new_zs
+end
+
+# Z = {λ1, ..., λp}
+function stepZ(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  new_λs = [params.λs[k] + opts.lagρ * (params.zs[k] - params.vs[k]) for k in 1:params.num_cliques]
+  return new_λs
+end
+
+# Calculate the primal and dual errors
+function stepErrors(prev_params :: AdmmParams, this_params :: AdmmParams, opts :: AdmmSdpOptions)
+  num_cliques = this_params.num_cliques
+  this_zs = this_params.zs
+  this_vs = this_params.vs
+
+  errc_num = sqrt(sum(norm(this_zs[k] - this_vs[k])^2 for k in 1:num_cliques))
+  errc_denom1 = sqrt(sum(norm(this_zs[k])^2 for k in 1:num_cliques))
+  errc_denom2 = sqrt(sum(norm(this_vs[k])^2 for k in 1:num_cliques))
+  errc = errc_num / max(errc_denom1, errc_denom2)
+
+  prev_zs = prev_params.zs
+  this_λs = this_params.λs
+  errλ1 = sqrt(sum(norm(this_zs[k] - prev_zs[k])^2 for k in 1:num_cliques))
+  errλ2 = 1 / sqrt(sum(norm(this_λs[k])^2 for k in 1:num_cliques))
+  errλ = opts.lagρ * errλ1 * errλ2
+  return errc, errλ
+end
+
+# Check the λmax of Z as a proxy to see if Z is NSD
+function λmaxZ(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  z = makez(params, cache)
+  zdim = Int(round(sqrt(length(z))))
+  Z = Symmetric(Matrix(reshape(z, (zdim, zdim))))
+  λmax = maximum(eigvals(Z))
+  return λmax
+end
+
+# Go through stuff
+function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  step_params = deepcopy(_params)
+
+  steps_taken = 0
+  total_step_time, total_X_time, total_Y_time, total_Z_time = 0, 0, 0, 0
+
+  for t in 1:opts.max_steps
+    step_start_time = time()
+    prev_step_params = deepcopy(step_params)
+
+    # X stuff
+    X_start_time = time()
+    new_γ, new_vs = stepXsolver(step_params, cache, opts)
+    step_params.γ = new_γ
+    step_params.vs = new_vs
+    X_time = time() - X_start_time
+    total_X_time += X_time
+
+    # Y stuff
+    Y_start_time = time()
+    new_zs = stepY(step_params, cache, opts)
+    step_params.zs = new_zs
+    Y_time = time() - Y_start_time
+    total_Y_time += Y_time
+
+    # Z stuff
+    Z_start_time = time()
+    new_λs = stepZ(step_params, cache, opts)
+    step_params.λs = new_λs
+    Z_time = time() - Z_start_time
+    total_Z_time += Z_time
+
+
+    # Time logistics
+    step_time = time() - step_start_time
+    total_step_time += step_time
+    steps_taken += 1
+
+    # Calculate the error
+    errc, errλ = stepErrors(prev_step_params, step_params, opts)
+    λmax = λmaxZ(step_params, cache, opts)
+
+    # Dump information
+    if opts.verbose
+      times_str = @sprintf("(X: %.2f, Y: %.2f, Z: %.2f, step: %.2f, total: %.2f)",
+                           X_time, Y_time, Z_time, step_time, total_step_time)
+      @printf("\tstep[%d/%d] times: %s\n", t, opts.max_steps, times_str)
+      @printf("\tγlip: %.3f \terrc: %.6f \terrλ: %.6f \tλmaxZ(γ): %.3f\n",
+              step_params.γ[end], errc, errλ, λmax)
+    end
+  end
+
+  summary = AdmmSummary(
+    steps_taken = steps_taken,
+    termination_status = MaxStepsReached(),
+    total_step_time = total_step_time,
+    total_X_time = total_X_time,
+    total_Y_time = total_Y_time,
+    total_Z_time = total_Z_time,
+    avg_X_time = total_X_time / steps_taken,
+    avg_Y_time = total_Y_time / steps_taken,
+    avg_Z_time = total_Z_time / steps_taken)
+  return step_params, summary
+end
+
+function runQuery(inst :: QueryInstance, opts :: AdmmSdpOptions)
+  start_time = time()
+
+  # Initialize some parameters
+  init_params, init_time = initAdmmParams(inst, opts)
+  cache, cache_time = initAdmmCache(inst, init_params, opts)
+  setup_time = init_time + cache_time
+
+  if opts.verbose; @printf("\tcache time: %.3f\n", cache_time) end
+
+  # Do the stepping
+  final_params, summary = stepAdmm(init_params, cache, opts)
+  total_time = time() - start_time
+
+  if opts.verbose
+    @printf("\tsetup time: %.3f \tsolve time: %.3f \ttotal time: %.3f \tvalue: %.3f (%s)\n",
+            setup_time, summary.total_step_time, total_time,
+            final_params.γ[end], string(summary.termination_status))
+  end
+
+  return SolutionOutput(
+    objective_value = final_params.γ[end],
+    values = final_params,
+    summary = summary,
+    termination_status = summary.termination_status,
+    total_time = total_time,
+    setup_time = setup_time,
+    solve_time = summary.total_step_time)
+end
 

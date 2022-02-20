@@ -89,7 +89,7 @@ function runQuery(inst :: QueryInstance, opts :: ChordalSdpOptions)
   summary, values = solve!(model, vars, opts)
   total_time = time() - total_start_time
   if opts.verbose
-    @printf("\tsetup time: %.3f\tsolve time: %.3f\ttotal time: %.3f\tvalue: %.3f (%s)\n",
+    @printf("\tsetup time: %.3f \tsolve time: %.3f \ttotal time: %.3f \tvalue: %.3f (%s)\n",
             setup_time, summary.solve_time, total_time,
             objective_value(model), string(summary.termination_status))
   end
