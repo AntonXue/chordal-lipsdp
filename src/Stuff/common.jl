@@ -60,9 +60,8 @@ function makeT(γt, τ :: Int, ffnet :: NeuralNetwork)
     δts = [e(i,Tdim)' - e(j,Tdim)' for (i,j) in ijs]
     Δ = vcat(δts...)
 
-    # Given a pair i,j calculate its relative index in the γt vector
-    pair2ind(i,j) = sum((Tdim-(j-i)+1):Tdim) + i
-    v = vec([γt[pair2ind(i,j)] for (i,j) in ijs])
+    # Match the ijs to γt by the above order; offset by Tdim due to the diags
+    v = vec([γt[Tdim+ind] for ind in 1:length(ijs)])
     T = Δ' * (v .* Δ)
     T[diagind(T)] = γt[1:Tdim]
   else

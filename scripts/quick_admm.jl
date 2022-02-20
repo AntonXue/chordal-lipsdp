@@ -28,7 +28,8 @@ ffnet = loadNeuralNetwork(args["nnet"])
 inst = QueryInstance(ffnet=ffnet)
 admm_opts = AdmmSdpOptions(τ=2)
 
-init_params, _ = initAdmmParams(inst, admm_opts)
 
-cache, _ = precomputeAdmmCache(inst, init_params, admm_opts)
+init_params, init_time = initAdmmParams(inst, admm_opts)
+
+cache, cache_time = initAdmmCache(inst, init_params, admm_opts)
 

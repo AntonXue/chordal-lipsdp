@@ -20,6 +20,6 @@ export makeCliqueInfos
 # Method-specific types and polymorphic functions
 export LipSdpOptions, ChordalSdpOptions, AdmmSdpOptions, AdmmParams
 export setup!, solve!, runQuery
-export initAdmmParams, precomputeAdmmCache
+export initAdmmParams, initAdmmCache
 
 end

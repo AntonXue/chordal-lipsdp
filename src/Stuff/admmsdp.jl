@@ -52,21 +52,51 @@ function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
 end
 
 
-function precomputeAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: AdmmSdpOptions)
+function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: AdmmSdpOptions)
   cache_start_time = time()
 
   # Some useful constants
   ffnet = inst.ffnet
   Zdim = sum(ffnet.edims)
   γdim = params.γdim
+  E1 = E(1, ffnet.edims)
+
+  A, B = makeA(ffnet), makeB(ffnet)
 
   # Compute the affine component first
   zaff = sparse(vec(makeZ(spzeros(γdim), opts.τ, ffnet)))
 
+  # The Jacobian that we gradually fill in
   J = spzeros(Zdim^2, γdim)
-  for i in 1:γdim
-    zk = sparse(vec(makeZ(e(i, γdim), opts.τ, ffnet))) - zaff
-    J[:,i] = zk
+
+  # Computation for index -> (i,j) pairings
+  Tdim = sum(ffnet.fdims)
+  ijs = [(i,i) for i in 1:Tdim] # Diagonal elements
+  ijs = vcat(ijs, [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= opts.τ]) # The rest
+
+  for γind in 1:γdim
+    # Special case the last term
+    if γind == γdim
+      # We know that γlip only affects the (1,1) block of Z
+      zk = -1 * sparse(vec(E1' * E1))
+
+    # The diagonal terms of T
+    elseif 1 <= γind <= Tdim
+      Tii = e(γind,Tdim) * e(γind, Tdim)'
+      M1ii = makeM1(Tii, A, B, ffnet)
+      zk = sparse(vec(M1ii))
+
+    # For the cross terms consider only ei*ej' and ej*ei'
+    # ... because experimentally that's what seems to work
+    # otherwise: zk = sparse(vec(makeZk(e(γind, γdim), ffnet))) - zaff
+    else
+      i, j = ijs[γind]
+      ei, ej = e(i, Tdim), e(j, Tdim)
+      Tij = -ei*ej' - ej*ei'
+      M1ij = makeM1(Tij, A, B, ffnet)
+      zk = sparse(vec(M1ij))
+    end
+    J[:,γind] = zk
   end
 
   # Prepare to return
