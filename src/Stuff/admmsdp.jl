@@ -9,7 +9,7 @@ using Printf
   max_iters :: Int = 200
   
   solver_X_max_time :: Float64 = 60.0
-  solver_X_tol :: Float64 = 1e-4t
+  solver_X_tol :: Float64 = 1e-4
   cholesky_reg_ε :: Float64 = 1e-2
   verbose :: Bool = false
 end
