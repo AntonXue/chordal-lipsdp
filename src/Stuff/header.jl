@@ -18,7 +18,7 @@ struct TanhActivation <: Activation end
   # The state vector dimension at start of each layer
   xdims :: VecInt
 
-  # The dimensions for the T
+  # The dimensions for the Z (edims) and T (fdims)
   edims :: VecInt = xdims[1:end-1]
   fdims :: VecInt = edims[2:end]
 

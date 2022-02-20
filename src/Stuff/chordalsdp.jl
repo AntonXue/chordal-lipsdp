@@ -20,26 +20,20 @@ function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
   setup_start_time = time()
   vars = Dict()
 
-  # Set up M1
-  Tdim = sum(inst.ffnet.fdims)
-  γdim = γlength(Tdim, opts.τ)
+  # Set up the variable where γ = [γt; γlip]
+  γdim = γlength(opts.τ, inst.ffnet)
   γ = @variable(model, [1:γdim])
   vars[:γ] = γ
   @constraint(model, γ[1:γdim] .>= 0)
-  T = makeT(Tdim, γ, opts.τ)
-  A, B = makeA(inst.ffnet), makeB(inst.ffnet)
-  M1 = makeM1(T, A, B, inst.ffnet)
 
-  # Set up M2
-  ρ = @variable(model)
-  vars[:ρ] = ρ
-  @constraint(model, ρ >= 0)
-  M2 = makeM2(ρ, inst.ffnet)
+  # The Z matrix as a sum
+  Z = makeZ(γ, opts.τ, inst.ffnet)
 
   # All the Zs
   cinfos = makeCliqueInfos(opts.τ, inst.ffnet)
   Zs = Vector{Any}()
   for (k, _, Ckdim) in cinfos
+    # Set up the LMI for each Zk
     Zk = @variable(model, [1:Ckdim, 1:Ckdim], Symmetric)
     vars[Symbol("Z" * string(k))] = Zk
     @SDconstraint(model, Zk <= 0)
@@ -49,9 +43,8 @@ function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
   # Assert the equality constraint and objective
   Zdim = sum(inst.ffnet.edims)
   Zksum = sum(Ec(kstart, Ckdim, Zdim)' * Zs[k] * Ec(kstart, Ckdim, Zdim) for (k, kstart, Ckdim) in cinfos)
-  Msum = M1 + M2
-  @constraint(model, Zksum .== Msum)
-  @objective(model, Min, ρ)
+  @constraint(model, Z .== Zksum)
+  @objective(model, Min, γ[end]) # γ[end] is γlip
 
   # Return stuff
   setup_time = time() - setup_start_time

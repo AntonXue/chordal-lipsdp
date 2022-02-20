@@ -19,26 +19,16 @@ function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
   setup_start_time = time()
   vars = Dict()
 
-  # Set up M1
-  Tdim = sum(inst.ffnet.fdims)
-  γdim = γlength(Tdim, opts.τ)
+  # Set up the variable where γ = [γt; γlip]
+  γdim = γlength(opts.τ, inst.ffnet)
   γ = @variable(model, [1:γdim])
   vars[:γ] = γ
   @constraint(model, γ[1:γdim] .>= 0)
-  T = makeT(Tdim, γ, opts.τ)
-  A, B = makeA(inst.ffnet), makeB(inst.ffnet)
-  M1 = makeM1(T, A, B, inst.ffnet)
 
-  # Set up M2
-  ρ = @variable(model)
-  vars[:ρ] = ρ
-  @constraint(model, ρ >= 0)
-  M2 = makeM2(ρ, inst.ffnet)
-
-  # Impose the LMI constraint and objective
-  Z = M1 + M2
+  # Set up the LMI
+  Z = makeZ(γ, opts.τ, inst.ffnet)
   @SDconstraint(model, Z <= 0)
-  @objective(model, Min, ρ)
+  @objective(model, Min, γ[end]) # γ[end] is γlip
 
   # Return information
   setup_time = time() - setup_start_time

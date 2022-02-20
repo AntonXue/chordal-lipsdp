@@ -44,26 +44,29 @@ function makeB(ffnet :: NeuralNetwork)
 end
 
 # Calculate how long the γ should be given a particular τ
-function γlength(Tdim :: Int, τ :: Int)
+# Note that γ = [γt; γρ]
+function γlength(τ :: Int, ffnet :: NeuralNetwork)
   @assert 0 <= τ
-  return sum((Tdim-τ):Tdim)
+  Tdim = sum(ffnet.fdims)
+  return sum((Tdim-τ):Tdim) + 1
 end
 
 # The T
-function makeT(Tdim :: Int, γ, τ :: Int)
-  @assert length(γ) == γlength(Tdim, τ)
+function makeT(γt, τ :: Int, ffnet :: NeuralNetwork)
+  @assert length(γt) + 1 == γlength(τ, ffnet)
+  Tdim = sum(ffnet.fdims)
   if τ > 0
     ijs = [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= τ]
     δts = [e(i,Tdim)' - e(j,Tdim)' for (i,j) in ijs]
     Δ = vcat(δts...)
 
-    # Given a pair i,j calculate its relative index in the γ vector
+    # Given a pair i,j calculate its relative index in the γt vector
     pair2ind(i,j) = sum((Tdim-(j-i)+1):Tdim) + i
-    v = vec([γ[pair2ind(i,j)] for (i,j) in ijs])
+    v = vec([γt[pair2ind(i,j)] for (i,j) in ijs])
     T = Δ' * (v .* Δ)
-    T[diagind(T)] = γ[1:Tdim]
+    T[diagind(T)] = γt[1:Tdim]
   else
-    T = Diagonal(γ[1:Tdim])
+    T = Diagonal(γt[1:Tdim])
   end
   return T
 end
@@ -82,24 +85,37 @@ function makeM1(T, A, B, ffnet :: NeuralNetwork)
 end
 
 # Construct M2
-function makeM2(ρ, ffnet :: NeuralNetwork)
+function makeM2(γρ, ffnet :: NeuralNetwork)
   E1 = E(1, ffnet.edims)
   EK = E(ffnet.K, ffnet.edims)
   WK = ffnet.Ms[ffnet.K][1:end, 1:end-1]
-  _R1 = -ρ * E1' * E1
+  _R1 = -γρ * E1' * E1
   _R2 = EK' * (WK' * WK) * EK
   M2 = _R1 + _R2
   return M2
 end
 
+# Make the Z
+function makeZ(γ, τ, ffnet :: NeuralNetwork)
+  @assert length(γ) == γlength(τ, ffnet)
+  γt, γρ = γ[1:end-1], γ[end]
+  T = makeT(γt, τ, ffnet)
+  A, B, = makeA(ffnet), makeB(ffnet)
+  M1 = makeM1(T, A, B, ffnet)
+  M2 = makeM2(γρ, ffnet)
+  Z = M1 + M2
+  return Z
+end
+
 # Calculate the start and size of each clique
-function makeCliqueInfos(b, ffnet :: NeuralNetwork)
+function makeCliqueInfos(τ :: Int, ffnet :: NeuralNetwork)
   edims = ffnet.edims
   Zdim = sum(edims)
+  # k, kstart, Ckdim
   clique_infos = Vector{Tuple{Int, Int, Int}}()
   for k in 1:length(edims)
     start = sum(edims[1:k-1])+1
-    Ckdim = edims[k] + edims[k+1] + b
+    Ckdim = edims[k] + edims[k+1] + τ
     if start + Ckdim - 1 >= Zdim
       push!(clique_infos, (k, start, Zdim-start+1))
       break
