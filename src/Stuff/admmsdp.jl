@@ -86,13 +86,11 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
       M1ii = makeM1(Tii, A, B, ffnet)
       zk = sparse(vec(M1ii))
 
-    # For the cross terms consider only ei*ej' and ej*ei'
-    # ... because experimentally that's what seems to work
-    # otherwise: zk = sparse(vec(makeZk(e(γind, γdim), ffnet))) - zaff
+    # The cross ij terms
     else
       i, j = ijs[γind]
-      ei, ej = e(i, Tdim), e(j, Tdim)
-      Tij = -ei*ej' - ej*ei'
+      δij = e(i,Tdim) - e(j,Tdim)
+      Tij = δij * δij'
       M1ij = makeM1(Tij, A, B, ffnet)
       zk = sparse(vec(M1ij))
     end

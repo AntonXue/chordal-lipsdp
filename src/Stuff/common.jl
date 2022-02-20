@@ -63,7 +63,9 @@ function makeT(γt, τ :: Int, ffnet :: NeuralNetwork)
     # Match the ijs to γt by the above order; offset by Tdim due to the diags
     v = vec([γt[Tdim+ind] for ind in 1:length(ijs)])
     T = Δ' * (v .* Δ)
-    T[diagind(T)] = γt[1:Tdim]
+
+    # The diagonal components are then added
+    T[diagind(T)] .+= γt[1:Tdim]
   else
     T = Diagonal(γt[1:Tdim])
   end

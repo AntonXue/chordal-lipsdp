@@ -2,6 +2,7 @@ module FastNDeepLipSdp
 
 using LinearAlgebra
 using Printf
+using Random
 
 include("Stuff.jl");
 include("Utils.jl");
@@ -21,6 +22,7 @@ end
 function warmup(; verbose=false)
   warmup_start_time = time()
   xdims = [2;3;3;3;3;3;2]
+  Random.seed!(1234)
   ffnet = randomNetwork(xdims)
   lopts = LipSdpOptions(τ=1, verbose=verbose)
   lsoln = solveLip(ffnet, lopts)
