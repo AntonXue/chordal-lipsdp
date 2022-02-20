@@ -4,12 +4,13 @@ using SparseArrays
 using Printf
 
 @with_kw struct AdmmSdpOptions
-  max_iters :: Int = 200
-  
-  cholesky_reg_ε :: Float64 = 1e-2
-
   τ :: Int = 0
   lagρ :: Float64 = 1.0
+  max_iters :: Int = 200
+  
+  solver_X_max_time :: Float64 = 60.0
+  solver_X_tol :: Float64 = 1e-4t
+  cholesky_reg_ε :: Float64 = 1e-2
   verbose :: Bool = false
 end
 
@@ -26,10 +27,14 @@ end
 end
 
 @with_kw struct AdmmCache
-  J :: SparseMatrixCSC{Float64, Int}
-  zaff :: SparseVector{Float64, Int}
-  Hs
-  chL
+  J :: SpMatF64
+  zaff :: SpVecF64
+  Hs :: Vector{SpMatF64}
+
+  # The cholesky of the perturbed (D + J*J') + ε*I
+  chL :: SpMatF64
+  # The diagonal elements that are technically non-zeros
+  diagL_hots :: BitArray{1}
 end
 
 
@@ -97,10 +102,51 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
     J[:,γind] = zk
   end
 
+  # Do the H stuff; the Ec are assumed to be sparse
+  Hs = [kron(Ec(k0, Ckd, Zdim), Ec(k0, Ckd, Zdim)) for (_, k0, Ckd) in params.cinfos]
+  Hs_hots = [Int.(Hk' * ones(size(Hk)[1])) for Hk in Hs]
+
+  # Do the cholesky stuff
+  D = Diagonal(sum(Hs_hots))
+  DJJt = D + (opts.lagρ * J * J')
+  DJJt_reg = Symmetric(DJJt + opts.cholesky_reg_ε * I)
+
+  chol = cholesky(DJJt_reg)
+  chL = sparse(chol.L)
+  diagL_hots = (diag(chL) .> 1.1 * sqrt(opts.cholesky_reg_ε))
+
+  # TODO: https://discourse.julialang.org/t/cholesky-decomposition-of-low-rank-positive-semidefinite-matrix/70397/3
+  # chol = cholesky(DJJt, Val(true), check=false)
+
   # Prepare to return
   cache_time = time() - cache_start_time
-  cache = AdmmCache(J=J, zaff=zaff, Hs=0, chL=0)
+  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chL=chL, diagL_hots=diagL_hots)
   return cache, cache_time
+end
+
+# Nonnegative projection
+function projRplus(γ :: VecF64)
+  return max.(γ, 0)
+end
+
+# Project a vector onto the NSD cone
+function projectNsd(vk :: VecF64)
+  vdim = Int(round(sqrt(length(vk)))) # :)
+  @assert length(vk) == vdim * vdim
+  tmp = Symmetric(reshape(vk, (vdim, vdim)))
+  eig = eigen(tmp)
+  tmp = Symmetric(eig.vectors * Diagonal(min.(eig.values, 0)) * eig.vectors')
+  return tmp[:]
+end
+
+# Use a solver to do the stepping X
+function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  model = Model(Mosek.Optimizer)
+  set_optimizer_attribute(model, "QUIET", true)
+  set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_tol)
 end
 
 

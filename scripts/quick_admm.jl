@@ -3,6 +3,7 @@ start_time = time()
 using LinearAlgebra
 using ArgParse
 using Printf
+using SparseArrays
 
 include("../src/FastNDeepLipSdp.jl"); using .FastNDeepLipSdp
 

@@ -11,7 +11,6 @@ using Printf
   max_solve_time :: Float64 = 30.0
   solver_tol :: Float64 = 1e-6
   use_dual :: Bool = false
-  use_cdcs :: Bool = false
   verbose :: Bool = false
 end
 
@@ -66,7 +65,7 @@ function runQuery(inst :: QueryInstance, opts :: ChordalSdpOptions)
 
   # Model setup
   if opts.use_dual
-    model = Model(dual_optimizer(optimizer_with_attributes(Mosek.Optimizer)))
+    model = Model(dual_optimizer(Mosek.Optimizer))
     set_optimizer_attribute(model, "QUIET", true)
     set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
@@ -76,7 +75,7 @@ function runQuery(inst :: QueryInstance, opts :: ChordalSdpOptions)
 
   # Model setup as primal
   else
-    model = Model(optimizer_with_attributes(Mosek.Optimizer))
+    model = Model(Mosek.Optimizer)
     set_optimizer_attribute(model, "QUIET", true)
     set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)

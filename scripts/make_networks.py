@@ -19,7 +19,7 @@ np.random.seed(1234)
 INPUT_DIM = 2
 OUTPUT_DIM = 2
 # LAYER_DIMS = [5, 10, 15, 20]
-LAYER_DIMS = [20, 40, 60]
+LAYER_DIMS = [10, 20, 30, 40, 50, 60]
 NUM_LAYERS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
 
 # Generate a random network given the number of layers, input, output, and layer dimensions

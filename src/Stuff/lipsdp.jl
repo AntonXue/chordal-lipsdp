@@ -50,7 +50,7 @@ function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
 
   # Model setup with dual
   if opts.use_dual
-    model = Model(dual_optimizer(optimizer_with_attributes(Mosek.Optimizer)))
+    model = Model(dual_optimizer(Mosek.Optimizer))
     set_optimizer_attribute(model, "QUIET", true)
     set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
@@ -60,7 +60,7 @@ function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
 
   # Model setup as primal
   else
-    model = Model(optimizer_with_attributes(Mosek.Optimizer))
+    model = Model(Mosek.Optimizer)
     set_optimizer_attribute(model, "QUIET", true)
     set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)

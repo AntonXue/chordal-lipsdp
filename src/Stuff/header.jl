@@ -1,9 +1,13 @@
 using Parameters
+using SparseArrays
 
-# Helpful types
+# Helpful type aliases
 const VecInt = Vector{Int}
 const VecF64 = Vector{Float64}
 const MatF64 = Matrix{Float64}
+const SpVecInt = SparseVector{Int, Int}
+const SpVecF64 = SparseVector{Float64, Int}
+const SpMatF64 = SparseMatrixCSC{Float64, Int}
 
 # Different types of networks
 abstract type Activation end

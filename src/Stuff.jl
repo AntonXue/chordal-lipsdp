@@ -7,7 +7,7 @@ include("Stuff/chordalsdp.jl");
 include("Stuff/admmsdp.jl");
 
 # Type definitions in core/header.jl
-export VecInt, VecF64, MatF64
+export VecInt, VecF64, MatF64, SpVecInt, SpVecF64, SpMatF64
 export Activation, ReluActivation, TanhActivation, NeuralNetwork
 export QueryInstance, SolutionOutput
 
