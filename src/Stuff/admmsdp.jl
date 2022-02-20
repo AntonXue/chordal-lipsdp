@@ -203,7 +203,13 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
     @constraint(model, [norms[k]; termk] in SecondOrderCone())
   end
 
-  obj = (0.5 * var_γ[end]^2) + sum(norms[k]^2 for k in 1:params.num_cliques)
+  γnorm = @variable(model)
+  @constraint(model, [γnorm; var_γ] in SecondOrderCone())
+
+  obj = γnorm^2 + sum(norms[k]^2 for k in 1:params.num_cliques)
+  # obj = (0.5 * var_γ[end]^2) + sum(norms[k]^2 for k in 1:params.num_cliques)
+  # obj = var_γ[end] + sum(norms[k]^2 for k in 1:params.num_cliques)
+  # obj = sum(norms[k]^2 for k in 1:params.num_cliques)
   @objective(model, Min, obj)
 
   # Solve and return
@@ -217,6 +223,37 @@ end
 function stepY(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   tmps = [params.vs[k] - (params.λs[k] / opts.lagρ) for k in 1:params.num_cliques]
   new_zs = projectNsd.(tmps)
+  return new_zs
+end
+
+function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  model = Model(Mosek.Optimizer)
+  set_optimizer_attribute(model, "QUIET", true)
+  set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solver_X_time)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_X_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_X_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_X_tol)
+
+  # Set up the variables
+  var_Zs = Vector{Any}()
+  for (_, _, Ckdim) in params.cinfos
+    var_Zk = @variable(model, [1:Ckdim, 1:Ckdim], Symmetric)
+    @SDconstraint(model, var_Zk <= 0)
+    push!(var_Zs, var_Zk)
+  end
+
+  # Norms
+  norms = @variable(model, [1:params.num_cliques])
+  for k in 1:params.num_cliques
+    termk = vec(var_Zs[k]) - params.vs[k] + (params.λs[k] / opts.lagρ)
+    @constraint(model, [norms[k]; termk] in SecondOrderCone())
+  end
+
+  obj = sum(norms[k]^2 for k in 1:params.num_cliques)
+
+  # Solve and return
+  optimize!(model)
+  new_zs = [vec(value.(var_Zs[k])) for k in 1:params.num_cliques]
   return new_zs
 end
 
@@ -245,13 +282,13 @@ function stepErrors(prev_params :: AdmmParams, this_params :: AdmmParams, opts :
   return errc, errλ
 end
 
-# Check the λmax of Z as a proxy to see if Z is NSD
-function λmaxZ(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+# Get the k largest eigenvalues of Z in decending order
+function eigvalsZ(k :: Int, params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   z = makez(params, cache)
   zdim = Int(round(sqrt(length(z))))
   Z = Symmetric(Matrix(reshape(z, (zdim, zdim))))
-  λmax = maximum(eigvals(Z))
-  return λmax
+  eigsZ = eigvals(Z)
+  return sort(eigsZ[end-k+1:end], rev=true)
 end
 
 # Go through stuff
@@ -276,6 +313,7 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     # Y stuff
     Y_start_time = time()
     new_zs = stepY(step_params, cache, opts)
+    # new_zs = stepYsolver(step_params, cache, opts)
     step_params.zs = new_zs
     Y_time = time() - Y_start_time
     total_Y_time += Y_time
@@ -287,7 +325,6 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     Z_time = time() - Z_start_time
     total_Z_time += Z_time
 
-
     # Time logistics
     step_time = time() - step_start_time
     total_step_time += step_time
@@ -295,15 +332,16 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
 
     # Calculate the error
     errc, errλ = stepErrors(prev_step_params, step_params, opts)
-    λmax = λmaxZ(step_params, cache, opts)
+    eigsZ = eigvalsZ(3, step_params, cache, opts)
 
     # Dump information
     if opts.verbose
       times_str = @sprintf("(X: %.2f, Y: %.2f, Z: %.2f, step: %.2f, total: %.2f)",
                            X_time, Y_time, Z_time, step_time, total_step_time)
       @printf("\tstep[%d/%d] times: %s\n", t, opts.max_steps, times_str)
-      @printf("\tγlip: %.3f \terrc: %.6f \terrλ: %.6f \tλmaxZ(γ): %.3f\n",
-              step_params.γ[end], errc, errλ, λmax)
+      @printf("\tγlip: %.3f \terrc: %.6f \terrλ: %.6f\n",
+              step_params.γ[end], errc, errλ)
+      println("\t\t$(eigsZ')")
     end
   end
 
