@@ -27,20 +27,38 @@ args = parseArgs()
 ffnet = loadNeuralNetwork(args["nnet"])
 Zdim = sum(ffnet.edims)
 Tdim = sum(ffnet.fdims)
+K = ffnet.K
+E1 = E(1, ffnet.edims)
+EK = E(ffnet.K, ffnet.edims)
+
+Ws = [M[1:end, 1:end-1] for M in ffnet.Ms]
+A, B = makeA(ffnet), makeB(ffnet)
 
 inst = QueryInstance(ffnet=ffnet)
-admm_opts = AdmmSdpOptions(τ=2, verbose=true, max_steps=200)
+τ = 2
 
 # Load this just in case
-lip_opts = LipSdpOptions(τ=admm_opts.τ, verbose=true)
+lip_opts = LipSdpOptions(τ=τ, verbose=true)
 lip_soln = runQuery(inst, lip_opts)
 lipZ = makeZ(lip_soln.values[:γ], lip_opts.τ, ffnet)
+lipγ = lip_soln.values[:γ]
+
+@printf("\n\n")
 
 # init_params, init_time = initAdmmParams(inst, admm_opts)
-# cache, cache_time = initAdmmCache(inst, init_params, admm_opts)
+admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=1000)
 admm_soln = runQuery(inst, admm_opts)
+admm_params = admm_soln.values
+num_cliques = admm_params.num_cliques
+cinfos = admm_params.cinfos
 
-Z = makeZ(admm_soln.values.γ, admm_opts.τ, ffnet)
+admmZ = makeZ(admm_soln.values.γ, admm_opts.τ, ffnet)
+psdZ = -1 * Symmetric(reshape(Stuff.projectNsd(-vec(admmZ)), size(admmZ)))
+Ecs = [Ec(k, Ckdim, Zdim) for (k, _, Ckdim) in cinfos]
+manualZs = [Symmetric(reshape(admm_params.zs[k], (Ckdim, Ckdim))) for (k, _, Ckdim) in cinfos]
+manualVs = [Symmetric(reshape(admm_params.vs[k], (Ckdim, Ckdim))) for (k, _, Ckdim) in cinfos]
 
-psdZ = -1 * Symmetric(reshape(Stuff.projectNsd(-vec(Z)), size(Z)))
+manualZ = sum(Ecs[k]' * manualZs[k] * Ecs[k] for k in 1:num_cliques)
+manualV = sum(Ecs[k]' * manualVs[k] * Ecs[k] for k in 1:num_cliques)
+
 

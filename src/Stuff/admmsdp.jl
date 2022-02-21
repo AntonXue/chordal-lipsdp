@@ -35,6 +35,7 @@ end
   avg_X_time :: Float64
   avg_Y_time :: Float64
   avg_Z_time :: Float64
+  err_hist :: Tuple{VecF64, VecF64}
 end
 
 # Parameters during stepation
@@ -68,7 +69,13 @@ function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
   init_start_time = time()
   
   # The γ stuff
-  γ = zeros(γlength(opts.τ, inst.ffnet)) # Need to store ρ at the end
+  γ = zeros(γlength(opts.τ, inst.ffnet))
+
+  # Initialize γρ to be large the upper-bound
+  Ws = [M[1:end, 1:end-1] for M in inst.ffnet.Ms]
+  γ[end] = prod(opnorm(W)^2 for W in Ws)
+
+  if opts.verbose; @printf("\tinit γρ = %.3f\n", γ[end]) end
 
   # The vectorized matrices
   cinfos = makeCliqueInfos(opts.τ, inst.ffnet)
@@ -161,10 +168,10 @@ function projRplus(γ :: VecF64)
 end
 
 # Project a vector onto the NSD cone
-function projectNsd(vk :: VecF64)
-  vdim = Int(round(sqrt(length(vk)))) # :)
-  @assert length(vk) == vdim * vdim
-  tmp = Symmetric(reshape(vk, (vdim, vdim)))
+function projectNsd(xk :: VecF64)
+  xdim = Int(round(sqrt(length(xk)))) # :)
+  @assert length(xk) == xdim * xdim
+  tmp = Symmetric(reshape(xk, (xdim, xdim)))
   eig = eigen(tmp)
   tmp = Symmetric(eig.vectors * Diagonal(min.(eig.values, 0)) * eig.vectors')
   return tmp[:]
@@ -180,8 +187,9 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_X_tol)
 
   # Set up the variables
-  var_γ = @variable(model, [1:params.γdim])
-  @constraint(model, var_γ[1:params.γdim] .>= 0)
+  num_cliques, γdim = params.num_cliques, params.γdim
+  var_γ = @variable(model, [1:γdim])
+  @constraint(model, var_γ[1:γdim] .>= 0)
 
   var_vs = Vector{Any}()
   for (_, _, Ckdim) in params.cinfos
@@ -189,16 +197,16 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
     push!(var_vs, var_vk)
   end
 
-  @assert params.num_cliques == length(var_vs) == length(cache.Hs)
+  @assert num_cliques == length(var_vs) == length(cache.Hs)
 
   # Equality constraints
   z = makez(params, cache)
-  vksum = sum(cache.Hs[k]' * var_vs[k] for k in 1:params.num_cliques)
+  vksum = sum(cache.Hs[k]' * var_vs[k] for k in 1:num_cliques)
   @constraint(model, z .== vksum)
 
   # The objective
-  norms = @variable(model, [1:params.num_cliques])
-  for k in 1:params.num_cliques
+  norms = @variable(model, [1:num_cliques])
+  for k in 1:num_cliques
     termk = params.zs[k] - var_vs[k] + (params.λs[k] / opts.lagρ)
     @constraint(model, [norms[k]; termk] in SecondOrderCone())
   end
@@ -206,16 +214,18 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   γnorm = @variable(model)
   @constraint(model, [γnorm; var_γ] in SecondOrderCone())
 
-  obj = γnorm^2 + sum(norms[k]^2 for k in 1:params.num_cliques)
-  # obj = (0.5 * var_γ[end]^2) + sum(norms[k]^2 for k in 1:params.num_cliques)
-  # obj = var_γ[end] + sum(norms[k]^2 for k in 1:params.num_cliques)
-  # obj = sum(norms[k]^2 for k in 1:params.num_cliques)
+  γscale = 0.1
+  obj = var_γ[end]^2 + (γscale * γnorm^2) + sum(norms[k]^2 for k in 1:num_cliques)
+  # obj = (0.5 * var_γ[end]^2) + sum(norms[k]^2 for k in 1:num_cliques)
+  #
+  # obj = var_γ[end] + sum(norms[k]^2 for k in 1:num_cliques)
+  # obj = sum(norms[k]^2 for k in 1:num_cliques)
   @objective(model, Min, obj)
 
   # Solve and return
   optimize!(model)
   new_γ = value.(var_γ)
-  new_vs = [value.(var_vs[k]) for k in 1:params.num_cliques]
+  new_vs = [value.(var_vs[k]) for k in 1:num_cliques]
   return new_γ, new_vs
 end
 
@@ -298,6 +308,13 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
   steps_taken = 0
   total_step_time, total_X_time, total_Y_time, total_Z_time = 0, 0, 0, 0
 
+  errc_hist = VecF64()
+  errλ_hist = VecF64()
+
+  stepXscale = 0.1
+  stepYscale = 0.1
+  stepZscale = 0.1
+
   for t in 1:opts.max_steps
     step_start_time = time()
     prev_step_params = deepcopy(step_params)
@@ -305,8 +322,10 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     # X stuff
     X_start_time = time()
     new_γ, new_vs = stepXsolver(step_params, cache, opts)
-    step_params.γ = new_γ
-    step_params.vs = new_vs
+    # step_params.γ = new_γ
+    # step_params.vs = new_vs
+    step_params.γ = stepXscale * new_γ + (1 - stepXscale) * step_params.γ
+    step_params.vs = stepXscale * new_vs + (1 - stepXscale) * step_params.vs
     X_time = time() - X_start_time
     total_X_time += X_time
 
@@ -314,14 +333,16 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     Y_start_time = time()
     new_zs = stepY(step_params, cache, opts)
     # new_zs = stepYsolver(step_params, cache, opts)
-    step_params.zs = new_zs
+    # step_params.zs = new_zs
+    step_params.zs = stepYscale * new_zs + (1 - stepYscale) * step_params.zs
     Y_time = time() - Y_start_time
     total_Y_time += Y_time
 
     # Z stuff
     Z_start_time = time()
     new_λs = stepZ(step_params, cache, opts)
-    step_params.λs = new_λs
+    # step_params.λs = new_λs
+    step_params.λs = stepZscale * new_λs + (1 - stepZscale) * step_params.λs
     Z_time = time() - Z_start_time
     total_Z_time += Z_time
 
@@ -332,6 +353,8 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
 
     # Calculate the error
     errc, errλ = stepErrors(prev_step_params, step_params, opts)
+    push!(errc_hist, errc)
+    push!(errλ_hist, errλ)
     eigsZ = eigvalsZ(3, step_params, cache, opts)
 
     # Dump information
@@ -341,7 +364,7 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
       @printf("\tstep[%d/%d] times: %s\n", t, opts.max_steps, times_str)
       @printf("\tγlip: %.3f \terrc: %.6f \terrλ: %.6f\n",
               step_params.γ[end], errc, errλ)
-      println("\t\t$(eigsZ')")
+      println("\t\t$(round.(eigsZ', digits=3))")
     end
   end
 
@@ -354,7 +377,8 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     total_Z_time = total_Z_time,
     avg_X_time = total_X_time / steps_taken,
     avg_Y_time = total_Y_time / steps_taken,
-    avg_Z_time = total_Z_time / steps_taken)
+    avg_Z_time = total_Z_time / steps_taken,
+    err_hist = (errc_hist, errλ_hist))
   return step_params, summary
 end
 
