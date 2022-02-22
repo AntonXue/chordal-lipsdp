@@ -42,13 +42,16 @@ lip_opts = LipSdpOptions(τ=τ, verbose=true)
 lip_soln = runQuery(inst, lip_opts)
 lipZ = makeZ(lip_soln.values[:γ], lip_opts.τ, ffnet)
 lipγ = lip_soln.values[:γ]
+@printf("lipγρ: %.3f\n", lipγ[end])
 
 @printf("\n\n")
 
 # init_params, init_time = initAdmmParams(inst, admm_opts)
-admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=1000)
+admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=500, ρ=1)
 admm_soln = runQuery(inst, admm_opts)
 admm_params = admm_soln.values
+admm_cache, _ = initAdmmCache(inst, admm_params, admm_opts)
+
 num_cliques = admm_params.num_cliques
 cinfos = admm_params.cinfos
 
@@ -56,9 +59,10 @@ admmZ = makeZ(admm_soln.values.γ, admm_opts.τ, ffnet)
 psdZ = -1 * Symmetric(reshape(Stuff.projectNsd(-vec(admmZ)), size(admmZ)))
 Ecs = [Ec(k, Ckdim, Zdim) for (k, _, Ckdim) in cinfos]
 manualZs = [Symmetric(reshape(admm_params.zs[k], (Ckdim, Ckdim))) for (k, _, Ckdim) in cinfos]
-manualVs = [Symmetric(reshape(admm_params.vs[k], (Ckdim, Ckdim))) for (k, _, Ckdim) in cinfos]
-
 manualZ = sum(Ecs[k]' * manualZs[k] * Ecs[k] for k in 1:num_cliques)
-manualV = sum(Ecs[k]' * manualVs[k] * Ecs[k] for k in 1:num_cliques)
 
+# manualVs = [Symmetric(reshape(admm_params.vs[k], (Ckdim, Ckdim))) for (k, _, Ckdim) in cinfos]
+# manualV = sum(Ecs[k]' * manualVs[k] * Ecs[k] for k in 1:num_cliques)
+
+err_primal_hist, err_dual_hist = admm_soln.summary.err_hist
 

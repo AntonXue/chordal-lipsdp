@@ -44,7 +44,7 @@ function makeB(ffnet :: NeuralNetwork)
 end
 
 # Calculate how long the γ should be given a particular τ
-# Note that γ = [γt; γρ]
+# Note that γ = [γac; γlip]
 function γlength(τ :: Int, ffnet :: NeuralNetwork)
   @assert 0 <= τ
   Tdim = sum(ffnet.fdims)
@@ -52,22 +52,22 @@ function γlength(τ :: Int, ffnet :: NeuralNetwork)
 end
 
 # The T
-function makeT(γt, τ :: Int, ffnet :: NeuralNetwork)
-  @assert length(γt) + 1 == γlength(τ, ffnet)
+function makeT(γac, τ :: Int, ffnet :: NeuralNetwork)
+  @assert length(γac) + 1 == γlength(τ, ffnet)
   Tdim = sum(ffnet.fdims)
   if τ > 0
     ijs = [(i,j) for i in 1:(Tdim-1) for j in (i+1):Tdim if j-i <= τ]
     δts = [e(i,Tdim)' - e(j,Tdim)' for (i,j) in ijs]
     Δ = vcat(δts...)
 
-    # Match the ijs to γt by the above order; offset by Tdim due to the diags
-    v = vec([γt[Tdim+ind] for ind in 1:length(ijs)])
+    # Match the ijs to γac by the above order; offset by Tdim due to the diags
+    v = vec([γac[Tdim+ind] for ind in 1:length(ijs)])
     T = Δ' * (v .* Δ)
 
     # The diagonal components are then added
-    T[diagind(T)] .+= γt[1:Tdim]
+    T[diagind(T)] .+= γac[1:Tdim]
   else
-    T = Diagonal(γt[1:Tdim])
+    T = Diagonal(γac[1:Tdim])
   end
   return T
 end
@@ -86,11 +86,11 @@ function makeM1(T, A, B, ffnet :: NeuralNetwork)
 end
 
 # Construct M2
-function makeM2(γρ, ffnet :: NeuralNetwork)
+function makeM2(γlip, ffnet :: NeuralNetwork)
   E1 = E(1, ffnet.edims)
   EK = E(ffnet.K, ffnet.edims)
   WK = ffnet.Ms[ffnet.K][1:end, 1:end-1]
-  _R1 = -γρ * E1' * E1
+  _R1 = -γlip * E1' * E1
   _R2 = EK' * (WK' * WK) * EK
   M2 = _R1 + _R2
   return M2
@@ -99,11 +99,11 @@ end
 # Make the Z
 function makeZ(γ, τ, ffnet :: NeuralNetwork)
   @assert length(γ) == γlength(τ, ffnet)
-  γt, γρ = γ[1:end-1], γ[end]
-  T = makeT(γt, τ, ffnet)
+  γac, γlip = γ[1:end-1], γ[end]
+  T = makeT(γac, τ, ffnet)
   A, B, = makeA(ffnet), makeB(ffnet)
   M1 = makeM1(T, A, B, ffnet)
-  M2 = makeM2(γρ, ffnet)
+  M2 = makeM2(γlip, ffnet)
   Z = M1 + M2
   return Z
 end
