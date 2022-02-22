@@ -7,7 +7,7 @@ using Random
 using Plots
 
 using ..Stuff
-include("Utils/nnet_parser.jl"); using .NNetParser
+include("nnet_parser.jl"); using .NNetParser
 
 pyplot()
 

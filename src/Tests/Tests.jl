@@ -6,12 +6,12 @@ using Random
 using JuMP
 using MosekTools
 
-include("FastNDeepLipSdp.jl")
+include("../FastNDeepLipSdp.jl")
 
 import Reexport
 Reexport.@reexport using .FastNDeepLipSdp
 
-include("Tests/admm_cache_tests.jl");
+include("admm_cache_tests.jl");
 
 
 end # End module

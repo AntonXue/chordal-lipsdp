@@ -39,10 +39,10 @@ inst = QueryInstance(ffnet=ffnet)
 
 # Load this just in case
 lip_opts = LipSdpOptions(τ=τ, verbose=true)
-lip_soln = runQuery(inst, lip_opts)
-lipZ = makeZ(lip_soln.values[:γ], lip_opts.τ, ffnet)
-lipγ = lip_soln.values[:γ]
-@printf("lipγρ: %.3f\n", lipγ[end])
+# lip_soln = runQuery(inst, lip_opts)
+# lipZ = makeZ(lip_soln.values[:γ], lip_opts.τ, ffnet)
+# lipγ = lip_soln.values[:γ]
+# @printf("lipγρ: %.3f\n", lipγ[end])
 
 @printf("\n\n")
 

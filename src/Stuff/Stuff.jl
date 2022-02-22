@@ -1,10 +1,10 @@
 module Stuff
 
-include("Stuff/header.jl");
-include("Stuff/common.jl");
-include("Stuff/lipsdp.jl");
-include("Stuff/chordalsdp.jl");
-include("Stuff/admmsdp.jl");
+include("header.jl");
+include("common.jl");
+include("lipsdp.jl");
+include("chordalsdp.jl");
+include("admmsdp.jl");
 
 # Type definitions in core/header.jl
 export VecInt, VecF64, MatF64, SpVecInt, SpVecF64, SpMatF64

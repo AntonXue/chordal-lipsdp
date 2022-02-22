@@ -4,8 +4,8 @@ using LinearAlgebra
 using Printf
 using Random
 
-include("Stuff.jl");
-include("Utils.jl");
+include("Stuff/Stuff.jl");
+include("Utils/Utils.jl");
 
 import Reexport
 Reexport.@reexport using .Stuff
