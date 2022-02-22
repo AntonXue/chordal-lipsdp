@@ -35,7 +35,9 @@ end
   avg_X_time :: Float64
   avg_Y_time :: Float64
   avg_Z_time :: Float64
-  err_hist :: Tuple{VecF64, VecF64}
+  err_primal_hist :: VecF64
+  err_rel_hist :: VecF64
+  err_dual_hist :: VecF64
 end
 
 # Parameters during stepation
@@ -81,9 +83,9 @@ function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
 
   # The vectorized matrices
   cinfos = makeCliqueInfos(opts.τ, inst.ffnet)
-  vs = [ones(Ckdim^2) for (_, _, Ckdim) in cinfos]
-  zs = [ones(Ckdim^2) for (_, _, Ckdim) in cinfos]
-  λs = [ones(Ckdim^2) for (_, _, Ckdim) in cinfos]
+  vs = [zeros(Ckdim^2) for (_, _, Ckdim) in cinfos]
+  zs = [zeros(Ckdim^2) for (_, _, Ckdim) in cinfos]
+  λs = [zeros(Ckdim^2) for (_, _, Ckdim) in cinfos]
 
   # Conclude and return
   init_time = time() - init_start_time
@@ -243,11 +245,8 @@ end
 # minimize    (ρ / 2) sum ||zk - vk + λk/ρ||^2
 # subject to  each zk <= 0
 function stepY(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-  z = makez(params, cache)
-  Hs, zs, num_cliques = cache.Hs, params.zs, params.num_cliques
-  zksum = makezksum(params, cache)
-  tmps = [Hs[k] * (z + zksum + (params.λ/opts.ρ) - (Hs[k]' * zs[k])) for k in 1:num_cliques]
-  new_zs = projectNsd.(VecF64.(tmps))
+  tmps = [params.vs[k] - (params.λs[k] / opts.ρ) for k in 1:params.num_cliques]
+  new_zs = projectNsd.(tmps)
   return new_zs
 end
 
@@ -289,19 +288,6 @@ function stepZ(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
 end
 
 # Calculate the primal and dual errors
-#=
-function stepErrors(prev_params :: AdmmParams, this_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-  z = VecF64(makez(this_params, cache))
-  num_cliques = this_params.num_cliques
-  this_vksum = makevksum(this_params, cache)
-  prev_vksum = makevksum(prev_params, cache)
-
-  err_primal = norm(z - this_vksum)
-  err_dual = norm(opts.ρ * cache.J' * (this_vksum - prev_vksum))
-  return err_primal, err_dual
-end
-=#
-
 function stepErrors(prev_params :: AdmmParams, this_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   num_cliques = this_params.num_cliques
   this_zs = this_params.zs
@@ -310,10 +296,16 @@ function stepErrors(prev_params :: AdmmParams, this_params :: AdmmParams, cache 
   prev_zs = prev_params.zs
 
   err_primal = sqrt(sum(norm(this_zs[k] - this_vs[k])^2 for k in 1:num_cliques))
+
   err_dual1 = sqrt(sum(norm(this_zs[k] - prev_zs[k])^2 for k in 1:num_cliques))
   err_dual2 = sqrt(sum(norm(this_λs[k])^2 for k in 1:num_cliques))
   err_dual = opts.ρ * err_dual1 / err_dual2
-  return err_primal, err_dual
+
+  err_rel1 = sqrt(sum(norm(this_zs[k])^2 for k in 1:num_cliques))
+  err_rel2 = sqrt(sum(norm(this_vs[k])^2 for k in 1:num_cliques))
+  err_rel = err_primal / max(err_rel1, err_rel2)
+
+  return err_primal, err_dual, err_rel
 end
 
 # Get the k largest eigenvalues of Z in decending order
@@ -335,6 +327,7 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
 
   err_primal_hist = VecF64()
   err_dual_hist = VecF64()
+  err_rel_hist = VecF64()
 
   αx = 1.0
   αy = 1.0
@@ -344,13 +337,6 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     step_start_time = time()
     prev_step_params = deepcopy(step_params)
 
-    # Y stuff
-    Y_start_time = time()
-    new_zs = stepYsolver(step_params, cache, opts)
-    step_params.zs = [αy * new_zs[k] + (1 - αy) * step_params.zs[k] for k in 1:num_cliques]
-    Y_time = time() - Y_start_time
-    total_Y_time += Y_time
-
     # X stuff
     X_start_time = time()
     new_γ, new_vs = stepXsolver(step_params, cache, opts)
@@ -359,6 +345,13 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     X_time = time() - X_start_time
     total_X_time += X_time
 
+    # Y stuff
+    Y_start_time = time()
+    new_zs = stepY(step_params, cache, opts)
+    # new_zs = stepYsolver(step_params, cache, opts)
+    step_params.zs = [αy * new_zs[k] + (1 - αy) * step_params.zs[k] for k in 1:num_cliques]
+    Y_time = time() - Y_start_time
+    total_Y_time += Y_time
 
     # Z stuff
     Z_start_time = time()
@@ -373,9 +366,10 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     steps_taken += 1
 
     # Calculate the error
-    err_primal, err_dual = stepErrors(prev_step_params, step_params, cache, opts)
+    err_primal, err_dual, err_rel = stepErrors(prev_step_params, step_params, cache, opts)
     push!(err_primal_hist, err_primal)
     push!(err_dual_hist, err_dual)
+    push!(err_rel_hist, err_rel)
     eigsZ = eigvalsZ(3, step_params, cache, opts)
 
     # Dump information
@@ -383,8 +377,8 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
       times_str = @sprintf("(X: %.2f, Y: %.2f, Z: %.2f, step: %.2f, total: %.2f)",
                            X_time, Y_time, Z_time, step_time, total_step_time)
       @printf("\tstep[%d/%d] times: %s\n", t, opts.max_steps, times_str)
-      @printf("\tγlip: %.3f \terr_primal: %.6f \terr_dual: %.6f\n",
-              step_params.γ[end], err_primal, err_dual)
+      @printf("\tγlip: %.3f \terr_primal: %.6f \terr_dual: %.6f \terr_rel: %.6f\n",
+              step_params.γ[end], err_primal, err_dual, err_rel)
       println("\t\t$(round.(eigsZ', digits=3))")
     end
 
@@ -404,7 +398,9 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     avg_X_time = total_X_time / steps_taken,
     avg_Y_time = total_Y_time / steps_taken,
     avg_Z_time = total_Z_time / steps_taken,
-    err_hist = (err_primal_hist, err_dual_hist))
+    err_primal_hist = err_primal_hist,
+    err_dual_hist = err_dual_hist,
+    err_rel_hist = err_rel_hist)
   return step_params, summary
 end
 

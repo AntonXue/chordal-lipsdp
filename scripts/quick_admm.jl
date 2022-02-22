@@ -47,7 +47,7 @@ lip_opts = LipSdpOptions(τ=τ, verbose=true)
 @printf("\n\n")
 
 # init_params, init_time = initAdmmParams(inst, admm_opts)
-admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=500, ρ=1)
+admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=1000, ρ=1)
 admm_soln = runQuery(inst, admm_opts)
 admm_params = admm_soln.values
 admm_cache, _ = initAdmmCache(inst, admm_params, admm_opts)
@@ -64,5 +64,7 @@ manualZ = sum(Ecs[k]' * manualZs[k] * Ecs[k] for k in 1:num_cliques)
 # manualVs = [Symmetric(reshape(admm_params.vs[k], (Ckdim, Ckdim))) for (k, _, Ckdim) in cinfos]
 # manualV = sum(Ecs[k]' * manualVs[k] * Ecs[k] for k in 1:num_cliques)
 
-err_primal_hist, err_dual_hist = admm_soln.summary.err_hist
+err_primal_hist = admm_soln.summary.err_primal_hist
+err_dual_hist = admm_soln.summary.err_dual_hist
+err_rel_hist = admm_soln.summary.err_rel_hist
 
