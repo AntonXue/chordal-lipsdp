@@ -211,7 +211,8 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   end
 
   # Equality constraints
-  z = makez(params, cache)
+  # z = makez(params, cache)
+  z = cache.J * var_γ + cache.zaff
   vksum = sum(cache.Hs[k]' * var_vs[k] for k in 1:num_cliques)
   @constraint(model, z .== vksum)
 
@@ -289,11 +290,11 @@ end
 function stepErrors(prev_params :: AdmmParams, this_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   z = VecF64(makez(this_params, cache))
   num_cliques = this_params.num_cliques
-  this_zksum = makezksum(this_params, cache)
-  prev_zksum = makezksum(prev_params, cache)
+  this_vksum = makevksum(this_params, cache)
+  prev_vksum = makevksum(prev_params, cache)
 
-  err_primal = norm(z - this_zksum)
-  err_dual = norm(opts.ρ * cache.J' * (this_zksum - prev_zksum))
+  err_primal = norm(z - this_vksum)
+  err_dual = norm(opts.ρ * cache.J' * (this_vksum - prev_vksum))
   return err_primal, err_dual
 end
 
@@ -310,15 +311,16 @@ end
 function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   step_params = deepcopy(_params)
 
+  num_cliques = step_params.num_cliques
   steps_taken = 0
   total_step_time, total_X_time, total_Y_time, total_Z_time = 0, 0, 0, 0
 
   err_primal_hist = VecF64()
   err_dual_hist = VecF64()
 
-  stepXscale = 0.02
-  stepYscale = 0.02
-  stepZscale = 0.02
+  αx = 0.02
+  αy = 0.02
+  αz = 0.02
 
   for t in 1:opts.max_steps
     step_start_time = time()
@@ -327,25 +329,22 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     # X stuff
     X_start_time = time()
     new_γ, new_vs = stepXsolver(step_params, cache, opts)
-    # step_params.γ = new_γ
-    step_params.γ = stepXscale * new_γ + (1 - stepXscale) * step_params.γ
+    step_params.γ = αx * new_γ + (1 - αx) * step_params.γ
+    step_params.vs = [αx * new_vs[k] + (1 - αx) * step_params.vs[k] for k in 1:num_cliques] 
     X_time = time() - X_start_time
     total_X_time += X_time
 
     # Y stuff
     Y_start_time = time()
-    # new_zs = stepY(step_params, cache, opts)
     new_zs = stepYsolver(step_params, cache, opts)
-    # step_params.zs = new_zs
-    step_params.zs = stepYscale * new_zs + (1 - stepYscale) * step_params.zs
+    step_params.zs = [αy * new_zs[k] + (1 - αy) * step_params.zs[k] for k in 1:num_cliques]
     Y_time = time() - Y_start_time
     total_Y_time += Y_time
 
     # Z stuff
     Z_start_time = time()
     new_λs = stepZ(step_params, cache, opts)
-    # step_params.λs = new_λs
-    step_params.λs = stepZscale * new_λs + (1 - stepZscale) * step_params.λs
+    step_params.λs = [αz * new_λs[k] + (1 - αz) * step_params.λs[k] for k in 1:num_cliques]
     Z_time = time() - Z_start_time
     total_Z_time += Z_time
 
