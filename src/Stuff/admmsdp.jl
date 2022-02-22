@@ -60,10 +60,9 @@ end
   zaff :: SpVecF64
   Hs :: Vector{SpMatF64}
 
-  # The cholesky of the perturbed (D + J*J') + ε*I
-  chL :: SpMatF64
-  # The diagonal elements that are technically non-zeros
-  diagL_hots :: BitArray{1}
+  pchol_L :: SpMatF64
+  pchol_P :: SpMatF64 # TODO: use pchol.p instead of pchol.P
+  pchol_rank :: Float64
 end
 
 # Initialize parameters
@@ -74,7 +73,7 @@ function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
   γ = zeros(γlength(opts.τ, inst.ffnet))
 
   # Attempt a smart initialization γlip to be large the upper-bound
-  Ws = [M[1:end, 1:end-1] for M in inst.ffnet.Ms]
+  Ws = [M[:, 1:end-1] for M in inst.ffnet.Ms]
   # γ[end] = sqrt(prod(opnorm(W)^2 for W in Ws))
   # Tdim = sum(inst.ffnet.fdims)
   # γ[1:Tdim] .= 40
@@ -143,35 +142,30 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
   Hs = [kron(Ec(k0, Ckd, Zdim), Ec(k0, Ckd, Zdim)) for (_, k0, Ckd) in params.cinfos]
   Hs_hots = [Int.(Hk' * ones(size(Hk)[1])) for Hk in Hs]
 
-  # Do the cholesky stuff
+  # Set up the KKT matrix of [D At; A 0], where At = -J
   D = Diagonal(sum(Hs_hots))
-  DJJt = D + (opts.ρ * J * J')
-  DJJt_reg = Symmetric(DJJt + opts.cholesky_reg_ε * I)
+  _KKT22 = zeros(γdim, γdim)
+  KKT = Symmetric(Matrix([D -J; J' _KKT22])) # Symmetric(sparse(...))
 
-  chol = cholesky(DJJt_reg)
-  chL = sparse(chol.L)
-  diagL_hots = (diag(chL) .> 1.1 * sqrt(opts.cholesky_reg_ε))
+  pchol_start_time = time()
+  @printf("starting pchol\n")
+  # Pivoted Cholesky to factorize P L Lt Pt = KKT
+  pchol = cholesky(KKT, Val(true), check=false)
+  pchol_L = sparse(pchol.L)
+  pchol_P = sparse(pchol.P)
+  pchol_rank = pchol.rank
 
-  # TODO: https://discourse.julialang.org/t/cholesky-decomposition-of-low-rank-positive-semidefinite-matrix/70397/3
-  # chol = cholesky(DJJt, Val(true), check=false)
+  @printf("pchol took time: %.3f\n", time() - pchol_start_time)
 
   # Prepare to return
   cache_time = time() - cache_start_time
-  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chL=chL, diagL_hots=diagL_hots)
+  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, pchol_L=pchol_L, pchol_P=pchol_P, pchol_rank=pchol_rank)
   return cache, cache_time
 end
 
 # Make z vector given the cache
 function makez(params :: AdmmParams, cache :: AdmmCache)
   return cache.J * params.γ + cache.zaff
-end
-
-function makezksum(params :: AdmmParams, cache :: AdmmCache)
-  return sum(cache.Hs[k]' * params.zs[k] for k in 1:params.num_cliques)
-end
-
-function makevksum(params :: AdmmParams, cache :: AdmmCache)
-  return sum(cache.Hs[k]' * params.vs[k] for k in 1:params.num_cliques)
 end
 
 # Nonnegative projection
@@ -187,6 +181,10 @@ function projectNsd(xk :: VecF64)
   eig = eigen(tmp)
   tmp = Symmetric(eig.vectors * Diagonal(min.(eig.values, 0)) * eig.vectors')
   return tmp[:]
+end
+
+function stepX(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+
 end
 
 # Use a solver to do the stepping X

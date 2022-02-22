@@ -32,7 +32,7 @@ end
 
 # Make the A block matrix
 function makeA(ffnet :: NeuralNetwork)
-  Ws = [M[1:end, 1:end-1] for M in ffnet.Ms]
+  Ws = [M[:, 1:end-1] for M in ffnet.Ms]
   A = sum(E(k, ffnet.fdims)' * Ws[k] * E(k, ffnet.edims) for k in 1:(ffnet.K-1))
   return A
 end
@@ -89,7 +89,7 @@ end
 function makeM2(γlip, ffnet :: NeuralNetwork)
   E1 = E(1, ffnet.edims)
   EK = E(ffnet.K, ffnet.edims)
-  WK = ffnet.Ms[ffnet.K][1:end, 1:end-1]
+  WK = ffnet.Ms[ffnet.K][:, 1:end-1]
   _R1 = -γlip * E1' * E1
   _R2 = EK' * (WK' * WK) * EK
   M2 = _R1 + _R2

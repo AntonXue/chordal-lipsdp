@@ -31,7 +31,7 @@ K = ffnet.K
 E1 = E(1, ffnet.edims)
 EK = E(ffnet.K, ffnet.edims)
 
-Ws = [M[1:end, 1:end-1] for M in ffnet.Ms]
+Ws = [M[:, 1:end-1] for M in ffnet.Ms]
 A, B = makeA(ffnet), makeB(ffnet)
 
 inst = QueryInstance(ffnet=ffnet)
@@ -48,6 +48,14 @@ lip_opts = LipSdpOptions(τ=τ, verbose=true)
 
 # init_params, init_time = initAdmmParams(inst, admm_opts)
 admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=1000, ρ=1)
+params, _ = initAdmmParams(inst, admm_opts)
+cache, _= initAdmmCache(inst, params, admm_opts)
+
+L = cache.pchol_L
+P = cache.pchol_P
+r = cache.pchol_rank
+
+#=
 admm_soln = runQuery(inst, admm_opts)
 admm_params = admm_soln.values
 admm_cache, _ = initAdmmCache(inst, admm_params, admm_opts)
@@ -67,4 +75,5 @@ manualZ = sum(Ecs[k]' * manualZs[k] * Ecs[k] for k in 1:num_cliques)
 err_primal_hist = admm_soln.summary.err_primal_hist
 err_dual_hist = admm_soln.summary.err_dual_hist
 err_rel_hist = admm_soln.summary.err_rel_hist
+=#
 
