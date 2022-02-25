@@ -8,11 +8,22 @@ using Printf
 # Options for ADMM
 @with_kw struct AdmmSdpOptions
   τ :: Int = 0
-  ρ :: Float64 = 1.0
   max_steps :: Int = 200
+
+  ρ_init :: Float64 = 1.0
+  ρ_scale :: Float64 = 2
+  ρ_rel_gap :: Float64 = 10
+  ρ_max :: Float64 = 2^12
+  ρ_min :: Float64 = 2^(-12)
+
+  nsd_tol :: Float64 = 1e-3
+  stop_at_first_nsd :: Bool = true
   
   max_solver_X_time :: Float64 = 60.0
-  solver_X_tol :: Float64 = 1e-4
+  solver_X_tol :: Float64 = 1e-3
+
+  max_solver_Y_time :: Float64 = 60.0
+  solver_Y_tol :: Float64 = 1e-3
   cholesky_reg_ε :: Float64 = 1e-2
   verbose :: Bool = false
 end
@@ -36,8 +47,10 @@ end
   avg_Y_time :: Float64
   avg_Z_time :: Float64
   err_primal_hist :: VecF64
-  err_rel_hist :: VecF64
   err_dual_hist :: VecF64
+  err_rel_hist :: VecF64
+  err_aff_hist :: VecF64
+  λmax_hist :: VecF64
 end
 
 # Parameters during stepation
@@ -47,6 +60,7 @@ end
   vs :: Vector{VecF64}
   zs :: Vector{VecF64}
   λs :: Vector{VecF64}
+  ρ :: Float64
 
   # The stuff you shouldn't mutate
   γdim :: Int = length(γ)
@@ -60,9 +74,13 @@ end
   zaff :: SpVecF64
   Hs :: Vector{SpMatF64}
 
-  pchol_L :: SpMatF64
-  pchol_P :: SpMatF64 # TODO: use pchol.p instead of pchol.P
-  pchol_rank :: Float64
+  chol
+  D
+  pinvD
+  Jt_pinvD
+  pinvD_J
+  Jt_pinvD_J
+  inv_Jt_pinvD_J
 end
 
 # Initialize parameters
@@ -73,8 +91,8 @@ function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
   γ = zeros(γlength(opts.τ, inst.ffnet))
 
   # Attempt a smart initialization γlip to be large the upper-bound
-  Ws = [M[:, 1:end-1] for M in inst.ffnet.Ms]
-  # γ[end] = sqrt(prod(opnorm(W)^2 for W in Ws))
+  # Ws = [M[:, 1:end-1] for M in inst.ffnet.Ms]
+  # γ[end] = sqrt(prod(opnorm(W) for W in Ws))
   # Tdim = sum(inst.ffnet.fdims)
   # γ[1:Tdim] .= 40
 
@@ -86,9 +104,11 @@ function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
   zs = [zeros(Ckdim^2) for (_, _, Ckdim) in cinfos]
   λs = [zeros(Ckdim^2) for (_, _, Ckdim) in cinfos]
 
+  ρ = opts.ρ_init
+
   # Conclude and return
   init_time = time() - init_start_time
-  params = AdmmParams(γ=γ, vs=vs, zs=zs, λs=λs, cinfos=cinfos)
+  params = AdmmParams(γ=γ, vs=vs, zs=zs, λs=λs, ρ=ρ, cinfos=cinfos)
   return params, init_time
 end
 
@@ -140,26 +160,32 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
 
   # Do the H stuff; the Ec are assumed to be sparse
   Hs = [kron(Ec(k0, Ckd, Zdim), Ec(k0, Ckd, Zdim)) for (_, k0, Ckd) in params.cinfos]
-  Hs_hots = [Int.(Hk' * ones(size(Hk)[1])) for Hk in Hs]
+  # Hs_hots = [Int.(Hk' * ones(size(Hk)[1])) for Hk in Hs]
 
+  # Cache information for the KKT system
+  # [D -J; -Jt 0]
   # Set up the KKT matrix of [D At; A 0], where At = -J
-  D = Diagonal(sum(Hs_hots))
-  _KKT22 = zeros(γdim, γdim)
-  KKT = Symmetric(Matrix([D -J; J' _KKT22])) # Symmetric(sparse(...))
+  D = Diagonal(diag(sum(Hk' * Hk for Hk in Hs)))
+  pinvD = Diagonal(pinv(D))
+  
+  Jt_pinvD = J' * pinvD
+  pinvD_J = pinvD * J
+  Jt_pinvD_J = J' * pinvD * J
+  inv_Jt_pinvD_J = inv(Matrix(Jt_pinvD_J))
 
-  pchol_start_time = time()
-  @printf("starting pchol\n")
-  # Pivoted Cholesky to factorize P L Lt Pt = KKT
-  pchol = cholesky(KKT, Val(true), check=false)
-  pchol_L = sparse(pchol.L)
-  pchol_P = sparse(pchol.P)
-  pchol_rank = pchol.rank
-
-  @printf("pchol took time: %.3f\n", time() - pchol_start_time)
+  chol_start_time = time()
+  @printf("starting chol\n")
+  chol = cholesky(Jt_pinvD_J)
+  @printf("chol took time: %.3f\n", time() - chol_start_time)
 
   # Prepare to return
   cache_time = time() - cache_start_time
-  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, pchol_L=pchol_L, pchol_P=pchol_P, pchol_rank=pchol_rank)
+  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chol=chol,
+                    D=D, pinvD=pinvD, Jt_pinvD=Jt_pinvD, pinvD_J=pinvD_J,
+                    Jt_pinvD_J=Jt_pinvD_J, inv_Jt_pinvD_J=inv_Jt_pinvD_J)
+
+  # cache_time = time() - cache_start_time
+  # cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chol=0, pinvD=0, neg_Jt_pinvD=0, neg_pinvD_J=0, inv_Jt_pinvD_J=0)
   return cache, cache_time
 end
 
@@ -169,7 +195,7 @@ function makez(params :: AdmmParams, cache :: AdmmCache)
 end
 
 # Nonnegative projection
-function projRplus(γ :: VecF64)
+function projectRplus(γ :: VecF64)
   return max.(γ, 0)
 end
 
@@ -184,7 +210,31 @@ function projectNsd(xk :: VecF64)
 end
 
 function stepX(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  γdim, num_cliques = params.γdim, params.num_cliques
+  # First solve the KKT system
+  # Rhs of equation (3.27) in Zheng 2019
+  u1 = -cache.zaff + sum(cache.Hs[k]' * (params.zs[k] + (params.λs[k] / params.ρ)) for k in 1:num_cliques)
+  u2 = (-1 / params.ρ) * e(γdim, γdim) # For us, -b = e(γdim, γdim)
 
+  # First solve for γ
+  # L = sparse(cache.chol.L)
+  # w = L \ (cache.neg_Jt_pinvD * u1 - u2)
+  # γ_opt = L' \ w
+  
+  γ_opt = cache.inv_Jt_pinvD_J * (u2 + cache.Jt_pinvD * u1)
+  γ_opt = projectRplus(γ_opt) # The placement of this seems to matter
+
+  # println("\t\tlargest some values of γopt")
+  # println("\t\t$(sort(abs.(round.(γ_opt, digits=4)), rev=true)[1:3])")
+
+  # Now can solve for x
+  x_opt = cache.pinvD_J * γ_opt - cache.pinvD * u1
+
+  # Update vs
+  new_γ = γ_opt
+  new_vs = [params.zs[k] + (params.λs[k] / params.ρ) + cache.Hs[k] * x_opt for k in 1:num_cliques]
+  
+  return new_γ, new_vs
 end
 
 # Use a solver to do the stepping X
@@ -219,31 +269,76 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   # The terms of the penalty
   augnorms = @variable(model, [1:num_cliques])
   for k in 1:num_cliques
-    augk = params.zs[k] - var_vs[k] + (params.λs[k] / opts.ρ)
+    augk = params.zs[k] - var_vs[k] + (params.λs[k] / params.ρ)
     @constraint(model, [augnorms[k]; augk] in SecondOrderCone())
   end
 
-  γnorm = @variable(model)
-  @constraint(model, [γnorm; var_γ] in SecondOrderCone())
-
-  γscale = 0.1
-  obj = var_γ[end] + (opts.ρ / 2) * sum(augnorms[k]^2 for k in 1:num_cliques)
-  # obj = (1/2) * var_γ[end]^2 + (opts.ρ / 2) * sum(augnorms[k]^2 for k in 1:num_cliques)
-  # obj = var_γ[end]^2 + (γscale * γnorm^2) + sum(norms[k]^2 for k in 1:num_cliques)
+  obj = var_γ[end] + (params.ρ / 2) * sum(augnorms[k]^2 for k in 1:num_cliques)
+  @objective(model, Min, obj)
 
   # Solve and return
-  @objective(model, Min, obj)
   optimize!(model)
   new_γ = value.(var_γ)
   new_vs = [value.(var_vk) for var_vk in var_vs]
   return new_γ, new_vs
 end
 
+# Another version of the step solver
+function stepXsolver2(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  model = Model(Mosek.Optimizer)
+  set_optimizer_attribute(model, "QUIET", true)
+  set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solver_X_time)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_X_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_X_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_X_tol)
+
+  # Set up the variables
+  num_cliques = params.num_cliques
+  γdim = params.γdim
+  var_γ = @variable(model, [1:γdim])
+  @constraint(model, var_γ[1:γdim] .>= 0)
+
+  xdim = size(cache.pinvD)[1]
+  var_x = @variable(model, [1:xdim])
+
+  u1 = -cache.zaff + sum(cache.Hs[k]' * (params.zs[k] + (params.λs[k] / params.ρ)) for k in 1:num_cliques)
+  u2 = (-1 / params.ρ) * e(γdim, γdim) # For us, -b = e(γdim, γdim)
+
+  lhs1 = -cache.D * var_x + cache.J * var_γ
+  lhs2 = cache.J' * var_x
+
+  diff = [lhs1; lhs2] - [u1; u2]
+
+  diffnorm = @variable(model)
+  @constraint(model, [diffnorm; diff] in SecondOrderCone())
+  @objective(model, Min, diffnorm)
+
+  # The affine stuff
+  # @constraint(model, cache.Jt_pinvD_J * var_γ .== u2 + cache.Jt_pinvD * u1)
+  # @constraint(model, cache.D * var_x .== cache.J * var_γ - u1)
+  # @constraint(model, -cache.D * var_x + cache.J * var_γ .== u1)
+  # @constraint(model, cache.J' * var_x .== u2)
+
+  # @objective(model, Min, var_γ[end])
+
+  # Solve and return
+  optimize!(model)
+  x_val = value.(var_x)
+  new_vs = [params.zs[k] + (params.λs[k] / params.ρ) + cache.Hs[k] * x_val for k in 1:num_cliques]
+  new_γ = value.(var_γ)
+  new_γ = projectRplus(new_γ)
+
+  println("\tstepXsolver2 term status: $(solution_summary(model).termination_status)")
+
+  return new_γ, new_vs
+end
+
+
 # Y = {z1, ..., zp}
 # minimize    (ρ / 2) sum ||zk - vk + λk/ρ||^2
 # subject to  each zk <= 0
 function stepY(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-  tmps = [params.vs[k] - (params.λs[k] / opts.ρ) for k in 1:params.num_cliques]
+  tmps = [params.vs[k] - (params.λs[k] / params.ρ) for k in 1:params.num_cliques]
   new_zs = projectNsd.(tmps)
   return new_zs
 end
@@ -251,10 +346,10 @@ end
 function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   model = Model(Mosek.Optimizer)
   set_optimizer_attribute(model, "QUIET", true)
-  set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solver_X_time)
-  set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_X_tol)
-  set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_X_tol)
-  set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_X_tol)
+  set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solver_Y_time)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_Y_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_Y_tol)
+  set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_Y_tol)
 
   # Set up the variables
   num_cliques = params.num_cliques
@@ -267,13 +362,14 @@ function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
 
   augnorms = @variable(model, [1:num_cliques])
   for k in 1:num_cliques
-    augk = vec(var_Zs[k]) - params.vs[k] + (params.λs[k] / opts.ρ)
+    augk = vec(var_Zs[k]) - params.vs[k] + (params.λs[k] / params.ρ)
     @constraint(model, [augnorms[k]; augk] in SecondOrderCone())
   end
 
-  # Solve and return
   obj = sum(augnorms[k]^2 for k in 1:num_cliques)
   @objective(model, Min, obj)
+
+  # Solve and return
   optimize!(model)
   new_zs = [vec(value.(var_Zk)) for var_Zk in var_Zs]
   return new_zs
@@ -281,7 +377,7 @@ end
 
 # Z = {λ}
 function stepZ(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-  new_λs = [params.λs[k] + opts.ρ * (params.zs[k] - params.vs[k]) for k in 1:params.num_cliques]
+  new_λs = [params.λs[k] + params.ρ * (params.zs[k] - params.vs[k]) for k in 1:params.num_cliques]
   return new_λs
 end
 
@@ -297,13 +393,17 @@ function stepErrors(prev_params :: AdmmParams, this_params :: AdmmParams, cache 
 
   err_dual1 = sqrt(sum(norm(this_zs[k] - prev_zs[k])^2 for k in 1:num_cliques))
   err_dual2 = sqrt(sum(norm(this_λs[k])^2 for k in 1:num_cliques))
-  err_dual = opts.ρ * err_dual1 / err_dual2
+  err_dual = this_params.ρ * err_dual1 / err_dual2
 
   err_rel1 = sqrt(sum(norm(this_zs[k])^2 for k in 1:num_cliques))
   err_rel2 = sqrt(sum(norm(this_vs[k])^2 for k in 1:num_cliques))
   err_rel = err_primal / max(err_rel1, err_rel2)
 
-  return err_primal, err_dual, err_rel
+  err_aff1 = makez(this_params, cache)
+  err_aff2 = sum(cache.Hs[k]' * this_zs[k] for k in 1:num_cliques) # Compare with zk instead of vk
+  err_aff = norm(err_aff1 - err_aff2)
+
+  return err_primal, err_dual, err_rel, err_aff
 end
 
 # Get the k largest eigenvalues of Z in decending order
@@ -326,10 +426,10 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
   err_primal_hist = VecF64()
   err_dual_hist = VecF64()
   err_rel_hist = VecF64()
+  err_aff_hist = VecF64()
+  λmax_hist = VecF64()
 
-  αx = 1.0
-  αy = 1.0
-  αz = 0.2
+  αx, αy, αz = 1.0, 1.0, 1.0
 
   for t in 1:opts.max_steps
     step_start_time = time()
@@ -337,7 +437,9 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
 
     # X stuff
     X_start_time = time()
+    # new_γ, new_vs = stepX(step_params, cache, opts)
     new_γ, new_vs = stepXsolver(step_params, cache, opts)
+    # new_γ, new_vs = stepXsolver2(step_params, cache, opts)
     step_params.γ = αx * new_γ + (1 - αx) * step_params.γ
     step_params.vs = [αx * new_vs[k] + (1 - αx) * step_params.vs[k] for k in 1:num_cliques] 
     X_time = time() - X_start_time
@@ -364,25 +466,47 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     steps_taken += 1
 
     # Calculate the error
-    err_primal, err_dual, err_rel = stepErrors(prev_step_params, step_params, cache, opts)
+    err_primal, err_dual, err_rel, err_aff = stepErrors(prev_step_params, step_params, cache, opts)
     push!(err_primal_hist, err_primal)
     push!(err_dual_hist, err_dual)
     push!(err_rel_hist, err_rel)
+    push!(err_aff_hist, err_aff)
+    
+    # Adaptively adjust the penalty parameter ρ
+    if (step_params.ρ < opts.ρ_max) && (err_primal > err_dual * opts.ρ_rel_gap)
+      step_params.ρ *= opts.ρ_scale
+    end
+
+    if (step_params.ρ > opts.ρ_min) && (err_dual > err_primal * opts.ρ_rel_gap)
+      step_params.ρ /= opts.ρ_scale
+    end
+
+
     eigsZ = eigvalsZ(3, step_params, cache, opts)
+    push!(λmax_hist, eigsZ[1])
 
     # Dump information
     if opts.verbose
       times_str = @sprintf("(X: %.2f, Y: %.2f, Z: %.2f, step: %.2f, total: %.2f)",
                            X_time, Y_time, Z_time, step_time, total_step_time)
       @printf("\tstep[%d/%d] times: %s\n", t, opts.max_steps, times_str)
-      @printf("\tγlip: %.3f \terr_primal: %.6f \terr_dual: %.6f \terr_rel: %.6f\n",
-              step_params.γ[end], err_primal, err_dual, err_rel)
+      @printf("\terr_primal: %.6f \terr_dual: %.6f \terr_rel: %.6f \terr_aff: %.6f\n",
+              err_primal, err_dual, err_rel, err_aff)
+      @printf("\tγlip: %.4f \tnew_ρ: %.4f\n",
+              step_params.γ[end], step_params.ρ)
       println("\t\t$(round.(eigsZ', digits=3))")
     end
 
     # if max(err_primal, err_dual) > 1e3; break end
 
     if max(err_primal, err_dual) < 1e-3; break end
+
+    if max(err_primal, err_dual) > 1e8; break end
+
+    if opts.stop_at_first_nsd && eigsZ[1] < opts.nsd_tol; break end
+
+
+    @printf("\n")
 
   end
 
@@ -398,7 +522,9 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     avg_Z_time = total_Z_time / steps_taken,
     err_primal_hist = err_primal_hist,
     err_dual_hist = err_dual_hist,
-    err_rel_hist = err_rel_hist)
+    err_rel_hist = err_rel_hist,
+    err_aff_hist = err_aff_hist,
+    λmax_hist = λmax_hist)
   return step_params, summary
 end
 

@@ -47,18 +47,23 @@ lip_opts = LipSdpOptions(τ=τ, verbose=true)
 @printf("\n\n")
 
 # init_params, init_time = initAdmmParams(inst, admm_opts)
-admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=1000, ρ=1)
+admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=5000, ρ_init=1)
 params, _ = initAdmmParams(inst, admm_opts)
 cache, _= initAdmmCache(inst, params, admm_opts)
 
-L = cache.pchol_L
-P = cache.pchol_P
-r = cache.pchol_rank
+chol = cache.chol
+
+admm_soln = runQuery(inst, admm_opts)
+final_params = admm_soln.values
+
+
+HJ = hcat([Hk' for Hk in cache.Hs]...)
+HJ = [HJ -cache.J]
+
+qrf = qr(HJ)
+
 
 #=
-admm_soln = runQuery(inst, admm_opts)
-admm_params = admm_soln.values
-admm_cache, _ = initAdmmCache(inst, admm_params, admm_opts)
 
 num_cliques = admm_params.num_cliques
 cinfos = admm_params.cinfos
