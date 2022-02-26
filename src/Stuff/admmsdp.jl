@@ -8,13 +8,14 @@ using Printf
 # Options for ADMM
 @with_kw struct AdmmSdpOptions
   τ :: Int = 0
-  max_steps :: Int = 200
+  max_steps :: Int = 10000
 
   ρ_init :: Float64 = 1.0
   ρ_scale :: Float64 = 2
   ρ_rel_gap :: Float64 = 10
-  ρ_max :: Float64 = 2^12
-  ρ_min :: Float64 = 2^(-12)
+  ρ_max :: Float64 = 2^8
+  ρ_min :: Float64 = 2^(-8)
+  @assert ρ_min <= ρ_init <= ρ_max
 
   nsd_tol :: Float64 = 1e-3
   stop_at_first_nsd :: Bool = true
@@ -26,6 +27,9 @@ using Printf
   solver_Y_tol :: Float64 = 1e-3
   cholesky_reg_ε :: Float64 = 1e-2
   verbose :: Bool = false
+
+  verbose_every_t :: Int = 5
+  check_sat_every_t :: Int = 10
 end
 
 # Summary of the ADMM performance
@@ -74,22 +78,7 @@ end
   zaff :: SpVecF64
   zaff_f64 = VecF64(zaff)
   Hs :: Vector{SpMatF64}
-
-  #=
-  chol
-  D
-  pinvD
-  Jt_pinvD
-  pinvD_J
-  Jt_pinvD_J
-  inv_Jt_pinvD_J
-  =#
-
-  HJ
-  qrft
-  qrft_rank = rank(qrft.R)
-  Qt1 = droptol!(sparse(Matrix(qrft.Q)'), 1e-6)
-  Rt1 = qrft.R'[1:qrft_rank, :]
+  Zdim :: Int
 end
 
 # Initialize parameters
@@ -97,21 +86,31 @@ function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
   init_start_time = time()
   
   # The γ stuff
-  γ = zeros(γlength(opts.τ, inst.ffnet))
+  Zdim = sum(inst.ffnet.edims)
+  γ = sqrt(Zdim) * ones(γlength(opts.τ, inst.ffnet))
 
   # Attempt a smart initialization γlip to be large the upper-bound
-  # Ws = [M[:, 1:end-1] for M in inst.ffnet.Ms]
-  # γ[end] = sqrt(prod(opnorm(W) for W in Ws))
-  # Tdim = sum(inst.ffnet.fdims)
-  # γ[1:Tdim] .= 40
+  Ws = [M[:, 1:end-1] for M in inst.ffnet.Ms]
+  γ[end] = (prod(opnorm(W) for W in Ws)) / 2
 
   if opts.verbose; @printf("\tinit γlip = %.3f\n", γ[end]) end
 
   # The vectorized matrices
   cinfos = makeCliqueInfos(opts.τ, inst.ffnet)
+
+  # The Z we would have given the γ above; use this to guess initial values
+  Z = makeZ(γ, opts.τ, inst.ffnet)
+
+  # The vs get wiped out in the first X step anyways
   vs = [zeros(Ckdim^2) for (_, _, Ckdim) in cinfos]
-  zs = [zeros(Ckdim^2) for (_, _, Ckdim) in cinfos]
+  # zs = [zeros(Ckdim^2) for (_, _, Ckdim) in cinfos]
+  Ecs = [Ec(kstart, Ckdim, Zdim) for (_, kstart, Ckdim) in cinfos]
+  zs = [vec(Eck * Z * Eck') for Eck in Ecs]
+
+  # Guess some values of λ
   λs = [zeros(Ckdim^2) for (_, _, Ckdim) in cinfos]
+  # Λs = [-sqrt(Zdim) * I(Ckdim) for (_, _, Ckdim) in cinfos]
+  # λs = [VecF64(vec(Λk)) for Λk in Λs]
 
   ρ = opts.ρ_init
 
@@ -171,38 +170,9 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
   Hs = [kron(Ec(k0, Ckd, Zdim), Ec(k0, Ckd, Zdim)) for (_, k0, Ckd) in params.cinfos]
   # Hs_hots = [Int.(Hk' * ones(size(Hk)[1])) for Hk in Hs]
 
-  # Cache information for the KKT system
-  # [D -J; -Jt 0]
-  # Set up the KKT matrix of [D At; A 0], where At = -J
-  D = Diagonal(diag(sum(Hk' * Hk for Hk in Hs)))
-  pinvD = Diagonal(pinv(D))
-  
-  Jt_pinvD = J' * pinvD
-  pinvD_J = pinvD * J
-  Jt_pinvD_J = J' * pinvD * J
-  inv_Jt_pinvD_J = inv(Matrix(Jt_pinvD_J))
-
-  chol_start_time = time()
-  @printf("starting chol\n")
-  chol = cholesky(Jt_pinvD_J)
-  @printf("chol took time: %.3f\n", time() - chol_start_time)
-
-  HJt = [vcat([Hk for Hk in Hs]...); -J']
-  qr_start_time = time()
-  @printf("starting qr\n")
-  qrft = qr(HJt)
-  @printf("qr took time: %.3f\n", time() - qr_start_time)
-
-
-  HJ = sparse(HJt')
-  qrft_rank = rank(qrft.R)
-
   # Prepare to return
   cache_time = time() - cache_start_time
-  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, HJ=HJ, qrft=qrft)
-
-  # cache_time = time() - cache_start_time
-  # cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chol=0, pinvD=0, neg_Jt_pinvD=0, neg_pinvD_J=0, inv_Jt_pinvD_J=0)
+  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, Zdim=Zdim)
   return cache, cache_time
 end
 
@@ -224,34 +194,6 @@ function projectNsd(xk :: VecF64)
   eig = eigen(tmp)
   tmp = Symmetric(eig.vectors * Diagonal(min.(eig.values, 0)) * eig.vectors')
   return tmp[:]
-end
-
-function stepX(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-  γdim, num_cliques = params.γdim, params.num_cliques
-  # First solve the KKT system
-  # Rhs of equation (3.27) in Zheng 2019
-  u1 = -cache.zaff + sum(cache.Hs[k]' * (params.zs[k] + (params.λs[k] / params.ρ)) for k in 1:num_cliques)
-  u2 = (-1 / params.ρ) * e(γdim, γdim) # For us, -b = e(γdim, γdim)
-
-  # First solve for γ
-  # L = sparse(cache.chol.L)
-  # w = L \ (cache.neg_Jt_pinvD * u1 - u2)
-  # γ_opt = L' \ w
-  
-  γ_opt = cache.inv_Jt_pinvD_J * (u2 + cache.Jt_pinvD * u1)
-  γ_opt = projectRplus(γ_opt) # The placement of this seems to matter
-
-  # println("\t\tlargest some values of γopt")
-  # println("\t\t$(sort(abs.(round.(γ_opt, digits=4)), rev=true)[1:3])")
-
-  # Now can solve for x
-  x_opt = cache.pinvD_J * γ_opt - cache.pinvD * u1
-
-  # Update vs
-  new_γ = γ_opt
-  new_vs = [params.zs[k] + (params.λs[k] / params.ρ) + cache.Hs[k] * x_opt for k in 1:num_cliques]
-  
-  return new_γ, new_vs
 end
 
 # Use a solver to do the stepping X
@@ -290,7 +232,7 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
     @constraint(model, [augnorms[k]; augk] in SecondOrderCone())
   end
 
-  obj = var_γ[end] + (params.ρ / 2) * sum(augnorms[k]^2 for k in 1:num_cliques)
+  obj = (var_γ[end])^2 + (params.ρ / 2) * sum(augnorms[k]^2 for k in 1:num_cliques)
   @objective(model, Min, obj)
 
   # Solve and return
@@ -347,75 +289,6 @@ function stepXsolver2(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpO
 
   println("\tstepXsolver2 term status: $(solution_summary(model).termination_status)")
 
-  return new_γ, new_vs
-end
-
-# Run a few rounds of projected gradient descent
-function stepXiterative(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-  num_cliques = params.num_cliques
-  γdim = params.γdim
-
-  # The componetns of the iterative variable x = [v1; ...; vp; γ]
-  xdims = [length.(params.vs); γdim]
-  xdim = sum(xdims)
-  zaff = VecF64(cache.zaff)
-
-  # The initial values
-  v0s = [params.zs[k] + (params.λs[k] / params.ρ) for k in 1:num_cliques]
-  γ0 = params.γ
-  xt = [vcat(v0s...); γ0]
-
-  α = 0.5
-  # Begin the iterations
-  for t = 1:3
-    xtprev = xt
-    xparts = splice(xt, xdims)
-    @assert length(xparts) == num_cliques + 1
-
-    # First the gradient step
-    ∇vs = [-params.ρ * (params.zs[k] - xparts[k] + (params.λs[k] / params.ρ)) for k in 1:num_cliques]
-    ∇γ = VecF64(e(γdim, γdim))
-    ∇f = [vcat(∇vs...); ∇γ]
-
-    # Take a step
-    yt1 = xt - α * ∇f
-
-    # Do the projection for z(γ) = sum Hk' vk
-    _tick1 = time()
-    r0 = cache.Rt1 \ (zaff[cache.qrft.pcol])[1:cache.qrft_rank]
-    _tick2 = time()
-
-    t0 = r0 - cache.Qt1 * yt1[cache.qrft.prow]
-    _tick3 = time()
-    w0 = cache.Qt1 \ t0
-    _tick4 = time()
-    w = w0[invperm(cache.qrft.prow)]
-    _tick5 = time()
-    xt = yt1 + w
-    _tick6 = time()
-
-    @printf("tick_1_2: %f\n", _tick2 - _tick1)
-    @printf("tick_2_3: %f\n", _tick3 - _tick2)
-    @printf("tick_3_4: %f\n", _tick4 - _tick3)
-    @printf("tick_4_5: %f\n", _tick5 - _tick4)
-    @printf("tick_5_6: %f\n", _tick6 - _tick5)
-
-    # @printf("diff: %f\n", sum(abs.(cache.HJ * (yt1 + w) - zaff)))
-    # @printf("diff no w: %f\n", sum(abs.(cache.HJ * (yt1) - zaff)))
-
-    # TODO: the projection for γ >= 0
-    xt_γ = xt[end-γdim+1:end]
-    xt_γpos = projectRplus(xt_γ)
-    xt[end-γdim+1:end] .= xt_γpos
-
-    wgap = sum(abs.(cache.HJ * yt1 - zaff))
-    prevdiff = sum(abs.(xt - xtprev))
-    @printf("\tstepXiter: wgap: %f\tprevdiff: %f\n", wgap, prevdiff)
-  end
-
-  xtparts = splice(xt, xdims)
-  new_γ = xtparts[end]
-  new_vs = xtparts[1:end-1]
   return new_γ, new_vs
 end
 
@@ -523,9 +396,9 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     # X stuff
     X_start_time = time()
     # new_γ, new_vs = stepX(step_params, cache, opts)
-    # new_γ, new_vs = stepXsolver(step_params, cache, opts)
+    new_γ, new_vs = stepXsolver(step_params, cache, opts)
     # new_γ, new_vs = stepXsolver2(step_params, cache, opts)
-    new_γ, new_vs = stepXiterative(step_params, cache, opts)
+    # new_γ, new_vs = stepXiterative(step_params, cache, opts)
     step_params.γ = αx * new_γ + (1 - αx) * step_params.γ
     step_params.vs = [αx * new_vs[k] + (1 - αx) * step_params.vs[k] for k in 1:num_cliques] 
     X_time = time() - X_start_time
@@ -567,12 +440,8 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
       step_params.ρ /= opts.ρ_scale
     end
 
-
-    eigsZ = eigvalsZ(3, step_params, cache, opts)
-    push!(λmax_hist, eigsZ[1])
-
     # Dump information
-    if opts.verbose
+    if opts.verbose && mod(t, opts.verbose_every_t) == 0
       times_str = @sprintf("(X: %.2f, Y: %.2f, Z: %.2f, step: %.2f, total: %.2f)",
                            X_time, Y_time, Z_time, step_time, total_step_time)
       @printf("\tstep[%d/%d] times: %s\n", t, opts.max_steps, times_str)
@@ -580,20 +449,25 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
               err_primal, err_dual, err_rel, err_aff)
       @printf("\tγlip: %.4f \tnew_ρ: %.4f\n",
               step_params.γ[end], step_params.ρ)
-      println("\t\t$(round.(eigsZ', digits=3))")
     end
 
-    # if max(err_primal, err_dual) > 1e3; break end
-
     if max(err_primal, err_dual) < 1e-3; break end
-
     if max(err_primal, err_dual) > 1e8; break end
 
-    if opts.stop_at_first_nsd && eigsZ[1] < opts.nsd_tol; break end
+    if mod(t, opts.check_sat_every_t) == 0
+      z = VecF64(makez(step_params, cache))
+      Z = Symmetric(reshape(z, (cache.Zdim, cache.Zdim)))
+      λmaxZ = eigmax(Z)
+      push!(λmax_hist, λmaxZ)
+      if opts.verbose && mod(t, opts.verbose_every_t) == 0
+        @printf("\t\tλmax Z(γ): %.4f\n", λmaxZ)
+      end
+      if opts.stop_at_first_nsd && λmaxZ < opts.nsd_tol; break end
+    end
 
-
-    @printf("\n")
-
+    if opts.verbose && mod(t, opts.verbose_every_t) == 0
+      @printf("\n\n")
+    end
   end
 
   summary = AdmmSummary(
