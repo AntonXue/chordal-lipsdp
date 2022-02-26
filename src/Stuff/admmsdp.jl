@@ -88,7 +88,7 @@ end
   HJ
   qrft
   qrft_rank = rank(qrft.R)
-  Qt1 = sparse(Matrix(qrft.Q)')
+  Qt1 = droptol!(sparse(Matrix(qrft.Q)'), 1e-6)
   Rt1 = qrft.R'[1:qrft_rank, :]
 end
 
@@ -358,6 +358,7 @@ function stepXiterative(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSd
   # The componetns of the iterative variable x = [v1; ...; vp; γ]
   xdims = [length.(params.vs); γdim]
   xdim = sum(xdims)
+  zaff = VecF64(cache.zaff)
 
   # The initial values
   v0s = [params.zs[k] + (params.λs[k] / params.ρ) for k in 1:num_cliques]
@@ -367,27 +368,55 @@ function stepXiterative(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSd
   α = 0.5
   # Begin the iterations
   for t = 1:3
+    xtprev = xt
     xparts = splice(xt, xdims)
     @assert length(xparts) == num_cliques + 1
 
     # First the gradient step
     ∇vs = [-params.ρ * (params.zs[k] - xparts[k] + (params.λs[k] / params.ρ)) for k in 1:num_cliques]
-    ∇γ = e(γdim, γdim)
+    ∇γ = VecF64(e(γdim, γdim))
     ∇f = [vcat(∇vs...); ∇γ]
 
     # Take a step
     yt1 = xt - α * ∇f
 
     # Do the projection for z(γ) = sum Hk' vk
-    
+    _tick1 = time()
+    r0 = cache.Rt1 \ (zaff[cache.qrft.pcol])[1:cache.qrft_rank]
+    _tick2 = time()
 
+    t0 = r0 - cache.Qt1 * yt1[cache.qrft.prow]
+    _tick3 = time()
+    w0 = cache.Qt1 \ t0
+    _tick4 = time()
+    w = w0[invperm(cache.qrft.prow)]
+    _tick5 = time()
+    xt = yt1 + w
+    _tick6 = time()
 
-    # Do the projection for γ >= 0
+    @printf("tick_1_2: %f\n", _tick2 - _tick1)
+    @printf("tick_2_3: %f\n", _tick3 - _tick2)
+    @printf("tick_3_4: %f\n", _tick4 - _tick3)
+    @printf("tick_4_5: %f\n", _tick5 - _tick4)
+    @printf("tick_5_6: %f\n", _tick6 - _tick5)
 
-    xt = yt1
+    # @printf("diff: %f\n", sum(abs.(cache.HJ * (yt1 + w) - zaff)))
+    # @printf("diff no w: %f\n", sum(abs.(cache.HJ * (yt1) - zaff)))
+
+    # TODO: the projection for γ >= 0
+    xt_γ = xt[end-γdim+1:end]
+    xt_γpos = projectRplus(xt_γ)
+    xt[end-γdim+1:end] .= xt_γpos
+
+    wgap = sum(abs.(cache.HJ * yt1 - zaff))
+    prevdiff = sum(abs.(xt - xtprev))
+    @printf("\tstepXiter: wgap: %f\tprevdiff: %f\n", wgap, prevdiff)
   end
 
-  return v0s, γ0, xt
+  xtparts = splice(xt, xdims)
+  new_γ = xtparts[end]
+  new_vs = xtparts[1:end-1]
+  return new_γ, new_vs
 end
 
 # Y = {z1, ..., zp}
@@ -494,8 +523,9 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     # X stuff
     X_start_time = time()
     # new_γ, new_vs = stepX(step_params, cache, opts)
-    new_γ, new_vs = stepXsolver(step_params, cache, opts)
+    # new_γ, new_vs = stepXsolver(step_params, cache, opts)
     # new_γ, new_vs = stepXsolver2(step_params, cache, opts)
+    new_γ, new_vs = stepXiterative(step_params, cache, opts)
     step_params.γ = αx * new_γ + (1 - αx) * step_params.γ
     step_params.vs = [αx * new_vs[k] + (1 - αx) * step_params.vs[k] for k in 1:num_cliques] 
     X_time = time() - X_start_time
