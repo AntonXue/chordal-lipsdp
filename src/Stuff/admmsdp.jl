@@ -75,6 +75,7 @@ end
   zaff_f64 = VecF64(zaff)
   Hs :: Vector{SpMatF64}
 
+  #=
   chol
   D
   pinvD
@@ -82,9 +83,13 @@ end
   pinvD_J
   Jt_pinvD_J
   inv_Jt_pinvD_J
+  =#
 
-  qrf
-  qrf_Q = sparse(Matrix(qrf.Q))
+  HJ
+  qrft
+  qrft_rank = rank(qrft.R)
+  Qt1 = sparse(Matrix(qrft.Q)')
+  Rt1 = qrft.R'[1:qrft_rank, :]
 end
 
 # Initialize parameters
@@ -182,20 +187,19 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
   chol = cholesky(Jt_pinvD_J)
   @printf("chol took time: %.3f\n", time() - chol_start_time)
 
-  HJ = hcat([Hk' for Hk in Hs]...)
-  HJ = [HJ -J]
+  HJt = [vcat([Hk for Hk in Hs]...); -J']
   qr_start_time = time()
   @printf("starting qr\n")
-  qrf = qr(HJ)
+  qrft = qr(HJt)
   @printf("qr took time: %.3f\n", time() - qr_start_time)
+
+
+  HJ = sparse(HJt')
+  qrft_rank = rank(qrft.R)
 
   # Prepare to return
   cache_time = time() - cache_start_time
-  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chol=chol,
-                    D=D, pinvD=pinvD, Jt_pinvD=Jt_pinvD, pinvD_J=pinvD_J,
-                    Jt_pinvD_J=Jt_pinvD_J, inv_Jt_pinvD_J=inv_Jt_pinvD_J,
-                    qrf=qrf
-                   )
+  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, HJ=HJ, qrft=qrft)
 
   # cache_time = time() - cache_start_time
   # cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chol=0, pinvD=0, neg_Jt_pinvD=0, neg_pinvD_J=0, inv_Jt_pinvD_J=0)
@@ -252,7 +256,7 @@ end
 
 # Use a solver to do the stepping X
 #   minimize    γlip^2 + (ρ / 2) sum ||zk - vk + λk/ρ||^2
-#   subject to  γ >= 0
+#   subject to  γ >= 0 and z(γ) = sum Hk' * vk
 function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   model = Model(Mosek.Optimizer)
   set_optimizer_attribute(model, "QUIET", true)
@@ -346,6 +350,45 @@ function stepXsolver2(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpO
   return new_γ, new_vs
 end
 
+# Run a few rounds of projected gradient descent
+function stepXiterative(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  num_cliques = params.num_cliques
+  γdim = params.γdim
+
+  # The componetns of the iterative variable x = [v1; ...; vp; γ]
+  xdims = [length.(params.vs); γdim]
+  xdim = sum(xdims)
+
+  # The initial values
+  v0s = [params.zs[k] + (params.λs[k] / params.ρ) for k in 1:num_cliques]
+  γ0 = params.γ
+  xt = [vcat(v0s...); γ0]
+
+  α = 0.5
+  # Begin the iterations
+  for t = 1:3
+    xparts = splice(xt, xdims)
+    @assert length(xparts) == num_cliques + 1
+
+    # First the gradient step
+    ∇vs = [-params.ρ * (params.zs[k] - xparts[k] + (params.λs[k] / params.ρ)) for k in 1:num_cliques]
+    ∇γ = e(γdim, γdim)
+    ∇f = [vcat(∇vs...); ∇γ]
+
+    # Take a step
+    yt1 = xt - α * ∇f
+
+    # Do the projection for z(γ) = sum Hk' vk
+    
+
+
+    # Do the projection for γ >= 0
+
+    xt = yt1
+  end
+
+  return v0s, γ0, xt
+end
 
 # Y = {z1, ..., zp}
 # minimize    (ρ / 2) sum ||zk - vk + λk/ρ||^2

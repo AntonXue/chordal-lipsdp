@@ -2,6 +2,18 @@ using LinearAlgebra
 using SparseArrays
 using Printf
 
+# Splice a vector
+function splice(x, sizes :: VecInt)
+  @assert all(sizes .>= 0)
+  @assert 1 <= length(x) == sum(sizes)
+  num_sizes = length(sizes)
+  highs = [sum(sizes[1:k]) for k in 1:num_sizes]
+  lows = [1; [1 + highk for highk in highs[1:end-1]]]
+  @assert length(highs) == length(lows)
+  splices = [x[lows[k] : highs[k]] for k in 1:num_sizes]
+  return splices
+end
+
 # The ith basis vector
 function e(i :: Int, dim :: Int)
   @assert 1 <= i <= dim
