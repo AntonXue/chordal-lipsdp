@@ -72,6 +72,7 @@ end
 @with_kw struct AdmmCache
   J :: SpMatF64
   zaff :: SpVecF64
+  zaff_f64 = VecF64(zaff)
   Hs :: Vector{SpMatF64}
 
   chol
@@ -81,6 +82,9 @@ end
   pinvD_J
   Jt_pinvD_J
   inv_Jt_pinvD_J
+
+  qrf
+  qrf_Q = sparse(Matrix(qrf.Q))
 end
 
 # Initialize parameters
@@ -178,11 +182,20 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
   chol = cholesky(Jt_pinvD_J)
   @printf("chol took time: %.3f\n", time() - chol_start_time)
 
+  HJ = hcat([Hk' for Hk in Hs]...)
+  HJ = [HJ -J]
+  qr_start_time = time()
+  @printf("starting qr\n")
+  qrf = qr(HJ)
+  @printf("qr took time: %.3f\n", time() - qr_start_time)
+
   # Prepare to return
   cache_time = time() - cache_start_time
   cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chol=chol,
                     D=D, pinvD=pinvD, Jt_pinvD=Jt_pinvD, pinvD_J=pinvD_J,
-                    Jt_pinvD_J=Jt_pinvD_J, inv_Jt_pinvD_J=inv_Jt_pinvD_J)
+                    Jt_pinvD_J=Jt_pinvD_J, inv_Jt_pinvD_J=inv_Jt_pinvD_J,
+                    qrf=qrf
+                   )
 
   # cache_time = time() - cache_start_time
   # cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chol=0, pinvD=0, neg_Jt_pinvD=0, neg_pinvD_J=0, inv_Jt_pinvD_J=0)

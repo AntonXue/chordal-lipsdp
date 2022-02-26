@@ -53,15 +53,54 @@ cache, _= initAdmmCache(inst, params, admm_opts)
 
 chol = cache.chol
 
-admm_soln = runQuery(inst, admm_opts)
-final_params = admm_soln.values
+# admm_soln = runQuery(inst, admm_opts)
+# final_params = admm_soln.values
 
 
 HJ = hcat([Hk' for Hk in cache.Hs]...)
 HJ = [HJ -cache.J]
 
 qrf = qr(HJ)
+qrfQ = sparse(Matrix(qrf.Q))
+qrfR = qrf.R
+# qrfQ * qrfR == HJ[qrf.prow, qrf.pcol]
 
+
+# Actions on the transpose
+HJt = vcat([Hk for Hk in cache.Hs]...)
+HJt = [HJt; -cache.J']
+
+qrft = qr(HJt)
+
+qrftQ1 = sparse(Matrix(qrft.Q))
+qrftR = qrft.R
+
+qrftrank = rank(qrft.R)
+
+
+# qrftQ1 * qrftR == HJt[qrft.prow, qrft.pcol]
+# qrftR' * qrftQ1' == HJ[qrft.pcol, qrft.prow]
+
+_Rt1 = qrftR'[1:qrftrank, :]
+_Qt1 = sparse(qrftQ1')
+
+# _Rt1 * _Qt1 * u[prow] == (b[pcol])[1:rank]
+
+
+u = randn(size(HJ)[2])
+b = HJ * u
+
+v = randn(size(HJ)[2]) # The random one that we find the w for
+
+r0 = _Rt1 \ (b[qrft.pcol])[1:qrftrank]
+t0 = r0 - _Qt1 * v[qrft.prow]
+w0 = _Qt1 \ t0
+w = w0[invperm(qrft.prow)]
+
+# HJ * (v + w) == b
+
+# Suppose HJ * u == b, then
+# qrftR' * qrftQ' * u[qrft.prow] == b[qrft.pcol]
 
 #=
 
