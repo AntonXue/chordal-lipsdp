@@ -47,7 +47,7 @@ lip_opts = LipSdpOptions(τ=τ, verbose=true)
 @printf("\n\n")
 
 # init_params, init_time = initAdmmParams(inst, admm_opts)
-admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=5000, ρ_init=256)
+admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=5000, ρ_init=1)
 params, _ = initAdmmParams(inst, admm_opts)
 cache, _= initAdmmCache(inst, params, admm_opts)
 
