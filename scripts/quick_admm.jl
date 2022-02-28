@@ -55,4 +55,12 @@ admm_soln = runQuery(inst, admm_opts)
 final_params = admm_soln.values
 
 
+chol = cache.chol
+
+D = sum(Hk' * Hk for Hk in cache.Hs)
+DJJt = D + cache.J * cache.J'
+
+spL = cache.spL
+
+
 

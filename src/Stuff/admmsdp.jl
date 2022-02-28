@@ -25,9 +25,8 @@ using Printf
 
   max_solver_Y_time :: Float64 = 60.0
   solver_Y_tol :: Float64 = 1e-3
-  cholesky_reg_ε :: Float64 = 1e-2
-  verbose :: Bool = false
 
+  verbose :: Bool = false
   verbose_every_t :: Int = 1
   check_sat_every_t :: Int = 1
 end
@@ -69,6 +68,7 @@ end
 
   # The stuff you shouldn't mutate
   γdim :: Int = length(γ)
+  Zdim :: Int
   cinfos :: Vector{Tuple{Int, Int, Int}} # k, kstart, Ckdim
   num_cliques :: Int = length(cinfos)
 end
@@ -79,7 +79,12 @@ end
   zaff :: SpVecF64
   zaff_f64 = VecF64(zaff)
   Hs :: Vector{SpMatF64}
-  Zdim :: Int
+
+  chol
+  spL = sparse(chol.L)
+  spL_r = spL[1:chol.rank, 1:chol.rank]
+  spLt_r = sparse(spL_r')
+
 end
 
 # Initialize parameters
@@ -119,7 +124,7 @@ function initAdmmParams(inst :: QueryInstance, opts :: AdmmSdpOptions)
 
   # Conclude and return
   init_time = time() - init_start_time
-  params = AdmmParams(γ=γ, vs=vs, ω=ω, zs=zs, μ=μ, λs=λs, ρ=ρ, cinfos=cinfos)
+  params = AdmmParams(γ=γ, vs=vs, ω=ω, zs=zs, μ=μ, λs=λs, ρ=ρ, Zdim=Zdim, cinfos=cinfos)
   return params, init_time
 end
 
@@ -129,10 +134,9 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
 
   # Some useful constants
   ffnet = inst.ffnet
-  Zdim = sum(ffnet.edims)
+  Zdim = params.Zdim
   γdim = params.γdim
   E1 = E(1, ffnet.edims)
-
   A, B = makeA(ffnet), makeB(ffnet)
 
   # Compute the affine component first
@@ -172,10 +176,16 @@ function initAdmmCache(inst :: QueryInstance, params :: AdmmParams, opts :: Admm
   # Do the H stuff; the Ec are assumed to be sparse
   Hs = [kron(Ec(k0, Ckd, Zdim), Ec(k0, Ckd, Zdim)) for (_, k0, Ckd) in params.cinfos]
   # Hs_hots = [Int.(Hk' * ones(size(Hk)[1])) for Hk in Hs]
+  
+  D = sum(Hk' * Hk for Hk in Hs)
+  DJJt = D + J * J'
+  chol_start_time = time()
+  chol = cholesky(Symmetric(Matrix(DJJt)), Val(true), check=false)
+  @printf("cholesky time: %.3f\n", time() - chol_start_time)
 
   # Prepare to return
   cache_time = time() - cache_start_time
-  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, Zdim=Zdim)
+  cache = AdmmCache(J=J, zaff=zaff, Hs=Hs, chol=chol)
   return cache, cache_time
 end
 
@@ -199,9 +209,34 @@ function projectNsd(xk :: VecF64)
   return tmp[:]
 end
 
-# Use a solver to do the stepping X
+# Step X
 #   minimize  γlip + (ρ/2) sum ||zk - vk + λk/ρ||^2 + (ρ/2) ||ω - γ + μ/ρ||^2
 #   subj to   z(γ) = sum Hk' * vk
+function stepX(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
+  Hzλsum = sum(cache.Hs[k]' * (params.zs[k] + (params.λs[k] / params.ρ)) for k in 1:params.num_cliques)
+  u1 = VecF64(Hzλsum - cache.zaff)
+  u2 = VecF64(params.ω + (1 / params.ρ) * (params.μ - e(params.γdim, params.γdim)))
+
+  # Solve for x via P L Lt Pt x = J * u2 - u1
+  # First solve P L y = J * u2 - u1
+  chol = cache.chol
+  rhs = cache.J * u2 - u1
+  rhs_r = (rhs[chol.p])[1:chol.rank]
+  y = cache.spL_r \ rhs_r
+  @assert length(y) == chol.rank
+
+  # Then solve Lt Pt x = y
+  Ptx_r = cache.spLt_r \ y
+  Ptx = [Ptx_r; zeros(length(rhs) - chol.rank + 1)]
+  x = Ptx[invperm(chol.p)]
+
+  # Now can solve for γ and vs
+  new_γ = u2 - cache.J' * x
+  new_vs = [params.zs[k] + (params.λs[k] / params.ρ) + cache.Hs[k] * x for k in 1:params.num_cliques]
+  return new_γ, new_vs
+end
+
+# Use a solver to do the stepping
 function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   model = Model(Mosek.Optimizer)
   set_optimizer_attribute(model, "QUIET", true)
@@ -250,13 +285,9 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   return new_γ, new_vs
 end
 
-# Another version of the step solver
-function stepXsolver2(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-end
-
 # Y = {z1, ..., zp}
 # minimize    (ρ/2) sum ||zk - vk + λk/ρ||^2 + (ρ/2) ||ω - γ + μ/ρ||^2
-# subject to  each zk <= 0
+# subject to  ω >= 0 and each zk <= 0
 function stepY(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   tmp_ω = params.γ - (params.μ / params.ρ)
   tmp_zs = [params.vs[k] - (params.λs[k] / params.ρ) for k in 1:params.num_cliques]
@@ -308,7 +339,7 @@ function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   return new_ω, new_zs
 end
 
-# Z = {λ}
+# Z = {μ, λ}
 function stepZ(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   new_μ = params.μ + params.ρ * (params.ω - params.γ)
   new_λs = [params.λs[k] + params.ρ * (params.zs[k] - params.vs[k]) for k in 1:params.num_cliques]
@@ -373,10 +404,8 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
 
     # X stuff
     X_start_time = time()
-    # new_γ, new_vs = stepX(step_params, cache, opts)
-    new_γ, new_vs = stepXsolver(step_params, cache, opts)
-    # new_γ, new_vs = stepXsolver2(step_params, cache, opts)
-    # new_γ, new_vs = stepXiterative(step_params, cache, opts)
+    new_γ, new_vs = stepX(step_params, cache, opts)
+    # new_γ, new_vs = stepXsolver(step_params, cache, opts)
     step_params.γ = αx * new_γ + (1 - αx) * step_params.γ
     step_params.vs = αx * new_vs + (1 - αx) * step_params.vs
     X_time = time() - X_start_time
@@ -438,11 +467,11 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     # This termination check is based on ω because it is actually projected
     if mod(t, opts.check_sat_every_t) == 0
       z = VecF64(cache.J * step_params.ω + cache.zaff)
-      Z = Symmetric(reshape(z, (cache.Zdim, cache.Zdim)))
+      Z = Symmetric(reshape(z, (step_params.Zdim, step_params.Zdim)))
       λmaxZ = eigmax(Z)
       push!(λmax_hist, λmaxZ)
       if opts.verbose && mod(t, opts.verbose_every_t) == 0
-        @printf("\t\tλmax Z(γ): %.4f\n", λmaxZ)
+        @printf("\t\tλmax Z(ω): %.4f\n", λmaxZ)
       end
       if opts.stop_at_first_nsd && λmaxZ < opts.nsd_tol; break end
     end
