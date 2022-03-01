@@ -35,7 +35,7 @@ function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
     # Set up the LMI for each Zk
     Zk = @variable(model, [1:Ckdim, 1:Ckdim], Symmetric)
     vars[Symbol("Z" * string(k))] = Zk
-    @SDconstraint(model, Zk <= 0)
+    @constraint(model, -Zk in PSDCone())
     push!(Zs, Zk)
   end
 

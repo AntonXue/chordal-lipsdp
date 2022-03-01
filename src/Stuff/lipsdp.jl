@@ -27,7 +27,7 @@ function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
 
   # Set up the LMI
   Z = makeZ(γ, opts.τ, inst.ffnet)
-  @SDconstraint(model, Z <= 0)
+  @constraint(model, -Z in PSDCone())
   @objective(model, Min, γ[end]) # γ[end] is γlip
 
   # Return information

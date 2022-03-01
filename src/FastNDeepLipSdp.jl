@@ -24,7 +24,7 @@ function warmup(; verbose=false)
   xdims = [2;3;3;3;3;3;2]
   Random.seed!(1234)
   ffnet = randomNetwork(xdims)
-  lopts = LipSdpOptions(τ=1, verbose=verbose)
+  lopts = LipSdpOptions(τ=1, verbose=verbose, use_dual=true)
   lsoln = solveLip(ffnet, lopts)
   copts = ChordalSdpOptions(τ=1, verbose=verbose)
   csoln = solveLip(ffnet, copts)

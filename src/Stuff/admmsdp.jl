@@ -311,7 +311,7 @@ function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   var_zs = Vector{Any}()
   for (_, _, Ckdim) in params.cinfos
     var_Zk = @variable(model, [1:Ckdim, 1:Ckdim], Symmetric)
-    @SDconstraint(model, var_Zk <= 0)
+    @constraint(model, -var_Zk in PSDCone())
     push!(var_zs, vec(var_Zk))
   end
 

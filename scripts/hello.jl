@@ -15,18 +15,6 @@ function parseArgs()
     "--nnet"
       arg_type = String
       required = true
-    #=
-    "--deepsdp"
-      action = :store_true
-    "--splitsdp"
-      action = :store_true
-    "--benchdir"
-      help = "the NNet file location"
-      arg_type = String
-      required = true
-    "--tband"
-      arg_type = Int
-    =#
   end
   return parse_args(ARGS, argparse_settings)
 end
@@ -44,78 +32,60 @@ warmup(verbose=true)
 
 # Different betas to try
 # τs = 0:4
-τs = 0:7
+τs = 0:10
 
-lprimal_times = VecF64([])
-ldual_times = VecF64([])
-cprimal_times = VecF64([])
-cdual_times = VecF64([])
+lip_solve_times = VecF64([])
+chord_solve_times = VecF64([])
 
-lprimal_vals = VecF64([])
-ldual_vals = VecF64([])
-cprimal_vals = VecF64([])
-cdual_vals = VecF64([])
+lip_total_times = VecF64([])
+chord_total_times = VecF64([])
+
+lip_vals = VecF64([])
+chord_vals = VecF64([])
 
 
 for τ in τs
   loop_start_time = time()
   @printf("tick for τ=%d!\n", τ)
 
-  #=
-  @printf("\tbegin LipSdp (τ=%d) with primal\n", τ)
-  lopts_primal = LipSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=false)
-  lsoln_primal = solveLip(ffnet, lopts_primal)
-  push!(lprimal_times, lsoln_primal.solve_time)
-  push!(lprimal_vals, lsoln_primal.objective_value)
-  =#
-
   @printf("\n")
   @printf("\tbegin LipSdp (τ=%d) with dual\n", τ)
-  lopts_dual = LipSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-4, verbose=true, use_dual=true)
-  lsoln_dual = solveLip(ffnet, lopts_dual)
-  push!(ldual_times, lsoln_dual.solve_time)
-  push!(ldual_vals, lsoln_dual.objective_value)
-
-
+  lip_opts = LipSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-6, verbose=true, use_dual=true)
+  lip_soln = solveLip(ffnet, lip_opts)
+  push!(lip_solve_times, lip_soln.solve_time)
+  push!(lip_total_times, lip_soln.total_time)
+  push!(lip_vals, lip_soln.objective_value)
 
   @printf("\n")
   @printf("\tbegin ChordalSdp (τ=%d) with primal\n", τ)
-  copts_primal = ChordalSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-4, verbose=true, use_dual=false)
-  csoln_primal = solveLip(ffnet, copts_primal)
-  push!(cprimal_times, csoln_primal.solve_time)
-  push!(cprimal_vals, csoln_primal.objective_value)
-
-  #=
-  @printf("\n")
-  @printf("\tbegin ChordalSdp (τ=%d) with dual\n", τ)
-  copts_dual = ChordalSdpOptions(τ=τ, max_solve_time=60.0, solver_tol=1e-4, verbose=true, use_dual=true)
-  csoln_dual = solveLip(ffnet, copts_dual)
-  push!(cdual_times, csoln_dual.solve_time)
-  push!(cdual_vals, csoln_dual.objective_value)
-  =#
+  chord_opts = ChordalSdpOptions(τ=τ, max_solve_time=120.0, solver_tol=1e-6, verbose=true, use_dual=false)
+  chord_soln = solveLip(ffnet, chord_opts)
+  push!(chord_solve_times, chord_soln.solve_time)
+  push!(chord_total_times, chord_soln.total_time)
+  push!(chord_vals, chord_soln.objective_value)
 
   @printf("\n--\n\n")
 end
 
 # Plot stuff
 
+nnet_filename = basename(args["nnet"])
+times_saveto = "~/dump/$(nnet_filename)_times.png"
+vals_saveto= "~/dump/$(nnet_filename)_vals.png"
+
 labeled_time_lines =
   [
-   # ("lipsdp-primal", lprimal_times);
-   ("lipsdp-dual", ldual_times);
-   ("chordal-primal", cprimal_times);
-   # ("chordal-dual", cdual_times);
+   ("lipsdp", lip_total_times);
+   ("chordal", chord_total_times);
   ]
-  Utils.plotLines(τs, labeled_time_lines, title=args["nnet"], saveto="~/Desktop/times.png")
+  Utils.plotLines(τs, labeled_time_lines, title=args["nnet"], saveto=times_saveto)
 
 labeled_val_lines =
   [
-   # ("lipsdp-primal", lprimal_vals);
-   ("lipsdp-dual", ldual_vals);
-   ("chordal-primal", cprimal_vals);
-   # ("chordal-dual", cdual_vals);
+   ("lipsdp", lip_vals);
+   ("chordal", chord_vals);
   ]
-Utils.plotLines(τs, labeled_val_lines, ylogscale=true, title=args["nnet"], saveto="~/Desktop/values.png")
+Utils.plotLines(τs, labeled_val_lines, ylogscale=true, title=args["nnet"], saveto=vals_saveto)
 
 
 @printf("repl start time: %.3f\n", time() - start_time)
