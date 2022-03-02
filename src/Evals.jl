@@ -55,7 +55,13 @@ function runNNet(nnet_filepath;
                  lipsdp_mosek_opts = EVALS_DEFAULT_MOSEK_OPTS,
                  chordalsdp_mosek_opts = EVALS_DEFAULT_MOSEK_OPTS,
                  saveto_dir = "~/dump")
+  # The τ values are meaningful
   @assert sort(τs) == τs && minimum(τs) >= 0
+
+  # Make directory if it doesn't exist yet
+  isdir(saveto_dir) || mkdir(saveto_dir)
+
+  # Load the stuff and do things
   ffnet = loadNeuralNetwork(nnet_filepath)
   nnet_filename = basename(nnet_filepath)
   println("Running: $(nnet_filename)")
@@ -66,7 +72,6 @@ function runNNet(nnet_filepath;
   lipsdp_eigmaxs, chordal_eigmaxs = VecF64([]), VecF64([])
 
   for (i, τ) in enumerate(τs)
-    loop_start_time = time()
     println("tick for τ[$(i)/$(length(τs))] = $(τ) of $(nnet_filename)")
 
     # LipSdp stuff
@@ -129,6 +134,7 @@ function runNNet(nnet_filepath;
 end
 
 #
+export EVALS_DEFAULT_MOSEK_OPTS
 export RunNNetResult
 export warmup, runNNet
 

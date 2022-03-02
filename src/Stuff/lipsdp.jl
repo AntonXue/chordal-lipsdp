@@ -53,7 +53,6 @@ function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
 
   # Use the dual optimizer?
   model = opts.use_dual ? Model(dual_optimizer(Mosek.Optimizer)) : Model(Mosek.Optimizer)
-  if opts.verbose; println("\tlipsdp use_dual = $(opts.use_dual)") end
 
   # Do the solver options; defaults first so they can be overriden
   pre_mosek_opts = opts.include_default_mosek_opts ? LIPSDP_DEFAULT_MOSEK_OPTS : Dict()
@@ -64,7 +63,6 @@ function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
   _, vars, setup_time = setup!(model, inst, opts)
   summary, values = solve!(model, vars, opts)
   total_time = time() - total_start_time
-
   if opts.verbose
     @printf("\tsetup time: %.3f \tsolve time: %.3f \ttotal time: %.3f \tvalue: %.3f (%s)\n",
             setup_time, summary.solve_time, total_time,

@@ -68,7 +68,6 @@ function runQuery(inst :: QueryInstance, opts :: ChordalSdpOptions)
 
   # Use the dual optimizer?
   model = opts.use_dual ? Model(dual_optimizer(Mosek.Optimizer)) : Model(Mosek.Optimizer)
-  if opts.verbose; println("\tchordalsdp use_dual = $(opts.use_dual)") end
 
   # Do the solver options, with defaults first so they can be overriden
   pre_mosek_opts = opts.include_default_mosek_opts ? CHORDALSDP_DEFAULT_MOSEK_OPTS : Dict()
