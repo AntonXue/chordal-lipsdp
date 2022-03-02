@@ -56,7 +56,7 @@ function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_tol)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_tol)
-    if opts.verbose; @printf("\tlipsdp model using dual\n") end
+    if opts.verbose; println("\tlipsdp model using dual") end
 
   # Model setup as primal
   else
@@ -66,7 +66,7 @@ function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_tol)
     set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_tol)
-    if opts.verbose; @printf("\tlipsdp model using primal\n") end
+    if opts.verbose; println("\tlipsdp model using primal") end
   end
 
   # Setup and solve

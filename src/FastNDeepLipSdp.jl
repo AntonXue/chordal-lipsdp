@@ -24,10 +24,10 @@ function warmup(; verbose=false)
   xdims = [2;3;3;3;3;3;2]
   Random.seed!(1234)
   ffnet = randomNetwork(xdims)
-  lopts = LipSdpOptions(τ=1, verbose=verbose, use_dual=true)
-  lsoln = solveLip(ffnet, lopts)
-  copts = ChordalSdpOptions(τ=1, verbose=verbose)
-  csoln = solveLip(ffnet, copts)
+  lipsdp_opts = LipSdpOptions(τ=1, verbose=verbose, use_dual=true)
+  lipsdp_soln = solveLip(ffnet, lipsdp_opts)
+  chordal_opts = ChordalSdpOptions(τ=1, verbose=verbose)
+  chordal_soln = solveLip(ffnet, chordal_opts)
   if verbose; @printf("warmup time: %.3f\n", time() - warmup_start_time) end
 end
 

@@ -477,7 +477,7 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
     end
 
     if opts.verbose && mod(t, opts.verbose_every_t) == 0
-      @printf("\n\n")
+      println("\n")
     end
   end
 

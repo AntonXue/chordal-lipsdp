@@ -69,7 +69,7 @@ end
 # Plot different line data
 # Get data of form (label1, ys1), (label2, ys2), ...
 function plotLines(xs, labeled_lines :: Vector{Tuple{String, VecF64}};
-                   title="title", ylogscale :: Bool = false, saveto :: String = "~/Desktop/foo.png")
+                   title = "title", ylogscale = false, saveto = "~/Desktop/foo.png")
   # Make sure we have a consistent number of data
   @assert all(lys -> length(xs) == length(lys[2]), labeled_lines)
   plt = plot(title=title)

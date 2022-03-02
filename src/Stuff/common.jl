@@ -1,6 +1,5 @@
 using LinearAlgebra
 using SparseArrays
-using Printf
 
 # Splice a vector
 function splice(x, sizes :: VecInt)
