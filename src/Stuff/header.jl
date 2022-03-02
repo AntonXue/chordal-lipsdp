@@ -41,6 +41,9 @@ end
   ffnet :: NeuralNetwork
 end
 
+# The type of options
+abstract type SdpOptions end
+
 # The solution that is to be output by an algorithm
 @with_kw struct SolutionOutput{A, B, C, D}
   objective_value :: A

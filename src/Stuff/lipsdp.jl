@@ -5,12 +5,15 @@ using MosekTools
 using Dualization
 using Printf
 
+# Default options for Mosek
+LIPSDP_DEFAULT_MOSEK_OPTS = Dict("QUIET" => true)
+
 # Options
-@with_kw struct LipSdpOptions
-  τ :: Int = 0
-  max_solve_time :: Float64 = 30.0  # Timeout in seconds
-  solver_tol :: Float64 = 1e-6
+@with_kw struct LipSdpOptions <: SdpOptions
+  τ :: Int = 0; @assert τ >= 0
   use_dual :: Bool = false
+  include_default_mosek_opts :: Bool = true
+  mosek_opts :: Dict{String, Any} = Dict()
   verbose :: Bool = false
 end
 
@@ -48,26 +51,14 @@ end
 function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
   total_start_time = time()
 
-  # Model setup with dual
-  if opts.use_dual
-    model = Model(dual_optimizer(Mosek.Optimizer))
-    set_optimizer_attribute(model, "QUIET", true)
-    set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
-    set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
-    set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_tol)
-    set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_tol)
-    if opts.verbose; println("\tlipsdp model using dual") end
+  # Use the dual optimizer?
+  model = opts.use_dual ? Model(dual_optimizer(Mosek.Optimizer)) : Model(Mosek.Optimizer)
+  if opts.verbose; println("\tlipsdp use_dual = $(opts.use_dual)") end
 
-  # Model setup as primal
-  else
-    model = Model(Mosek.Optimizer)
-    set_optimizer_attribute(model, "QUIET", true)
-    set_optimizer_attribute(model, "MSK_DPAR_OPTIMIZER_MAX_TIME", opts.max_solve_time)
-    set_optimizer_attribute(model, "INTPNT_CO_TOL_REL_GAP", opts.solver_tol)
-    set_optimizer_attribute(model, "INTPNT_CO_TOL_PFEAS", opts.solver_tol)
-    set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_tol)
-    if opts.verbose; println("\tlipsdp model using primal") end
-  end
+  # Do the solver options; defaults first so they can be overriden
+  pre_mosek_opts = opts.include_default_mosek_opts ? LIPSDP_DEFAULT_MOSEK_OPTS : Dict()
+  todo_mosek_opts = merge(pre_mosek_opts, opts.mosek_opts)
+  for (k, v) in todo_mosek_opts; set_optimizer_attribute(model, k, v) end
 
   # Setup and solve
   _, vars, setup_time = setup!(model, inst, opts)
