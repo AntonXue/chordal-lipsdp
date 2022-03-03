@@ -9,7 +9,7 @@ include("admmsdp.jl");
 # Type definitions in core/header.jl
 export VecInt, VecF64, MatF64, SpVecInt, SpVecF64, SpMatF64
 export Activation, ReluActivation, TanhActivation, NeuralNetwork
-export QueryInstance, SdpOptions, SolutionOutput
+export QueryInstance, SdpOptions, QuerySolution
 
 # Common funtionalities in core/common.jl
 export e, E, Ec

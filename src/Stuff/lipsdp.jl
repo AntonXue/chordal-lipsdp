@@ -6,14 +6,15 @@ using Dualization
 using Printf
 
 # Default options for Mosek
-LIPSDP_DEFAULT_MOSEK_OPTS = Dict("QUIET" => true)
+LIPSDP_DEFAULT_MOSEK_OPTS =
+  Dict("QUIET" => true)
 
 # Options
 @with_kw struct LipSdpOptions <: SdpOptions
   τ :: Int = 0; @assert τ >= 0
-  use_dual :: Bool = false
   include_default_mosek_opts :: Bool = true
   mosek_opts :: Dict{String, Any} = Dict()
+  use_dual :: Bool = true
   verbose :: Bool = false
 end
 
@@ -51,10 +52,8 @@ end
 function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
   total_start_time = time()
 
-  # Use the dual optimizer?
+  # Set up model and add solver options, with the defaults first
   model = opts.use_dual ? Model(dual_optimizer(Mosek.Optimizer)) : Model(Mosek.Optimizer)
-
-  # Do the solver options; defaults first so they can be overriden
   pre_mosek_opts = opts.include_default_mosek_opts ? LIPSDP_DEFAULT_MOSEK_OPTS : Dict()
   todo_mosek_opts = merge(pre_mosek_opts, opts.mosek_opts)
   for (k, v) in todo_mosek_opts; set_optimizer_attribute(model, k, v) end
@@ -69,7 +68,7 @@ function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
             objective_value(model), string(summary.termination_status))
   end
 
-  return SolutionOutput(
+  return QuerySolution(
     objective_value = objective_value(model),
     values = values,
     summary = summary,

@@ -66,7 +66,7 @@ for input_dim, output_dim, layer_dim, num_layers, _, Ws, bs in enumerate_random_
   ldim = str(layer_dim)
   numl = str(num_layers)
 
-  filename = f"rand-in{idim}-out{odim}-ldim{ldim}-numl{numl}"
+  filename = f"rand-I{idim}-O{odim}-W{ldim}-D{numl}"
   filename = filename + ".nnet"
   filepath = os.path.join(args.nnetdir, filename)
 

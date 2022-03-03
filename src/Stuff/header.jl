@@ -45,7 +45,7 @@ end
 abstract type SdpOptions end
 
 # The solution that is to be output by an algorithm
-@with_kw struct SolutionOutput{A, B, C, D}
+@with_kw struct QuerySolution{A, B, C, D}
   objective_value :: A
   values :: B
   summary :: C

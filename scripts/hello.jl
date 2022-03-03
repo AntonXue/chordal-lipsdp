@@ -4,6 +4,7 @@ using SparseArrays
 using ArgParse
 using Printf
 using Parameters
+using MosekTools
 include("../src/Evals.jl"); using .Evals
 @printf("import loading time: %.3f\n", time() - hello_start_time)
 
@@ -38,23 +39,59 @@ RAND_W20_BATCH = [(20, d, rand_nnet_filepath(20, d)) for d in [5; 10; 15; 20; 25
 RAND_W30_BATCH = [(30, d, rand_nnet_filepath(30, d)) for d in [5; 10; 15; 20; 25; 30;]]
 RAND_W40_BATCH = [(40, d, rand_nnet_filepath(40, d)) for d in [5; 10; 15; 20; 25]]
 RAND_W50_BATCH = [(50, d, rand_nnet_filepath(50, d)) for d in [5; 10; 15; 20;]]
+SMALL_RAND_BATCH = [(10, d, rand_nnet_filepath(10, d)) for d in [5; 10; 15]]
 
-RAND_SMALL_BATCH = [(10, d, rand_nnet_filepath(10, d)) for d in [5; 10;]]
+# The ACAS networks
+ACAS_FILES = readdir(ACAS_NNET_DIR, join=true)
+ACAS1_BATCH = filter(f -> (match(r".*run2a_1.*nnet", f) isa RegexMatch), ACAS_FILES)
+ACAS2_BATCH = filter(f -> (match(r".*run2a_2.*nnet", f) isa RegexMatch), ACAS_FILES)
+ACAS3_BATCH = filter(f -> (match(r".*run2a_3.*nnet", f) isa RegexMatch), ACAS_FILES)
+ACAS4_BATCH = filter(f -> (match(r".*run2a_4.*nnet", f) isa RegexMatch), ACAS_FILES)
+ACAS5_BATCH = filter(f -> (match(r".*run2a_5.*nnet", f) isa RegexMatch), ACAS_FILES)
+SMALL_ACAS_BATCH = ACAS_FILES[1:2]
 
 # Run a batch of random networks
-function runRandBatch(rand_batch; τs=0:9)
+function runRandBatch(rand_batch;
+                      τs = 0:9,
+                      lipsdp_mosek_opts = EVALS_MOSEK_OPTS,
+                      chordalsdp_mosek_opts = EVALS_MOSEK_OPTS)
+  batch_size = length(rand_batch)
   results = Vector{Any}()
-  for (w, d, nnet_filepath) in rand_batch
+  for (i, (w, d, nnet_filepath)) in enumerate(rand_batch)
     iter_start_time = time()
-    println("About to run rand $(w)W $(d)D")
+    println("About to run rand [$(i)/$(batch_size)]: $(w)W $(d)D")
     rand_saveto_dir = joinpath(DUMP_DIR, "rand")
-    res = runNNet(nnet_filepath,
-                  τs = τs,
-                  lipsdp_mosek_opts = EVALS_DEFAULT_MOSEK_OPTS,
-                  chordalsdp_mosek_opts = EVALS_DEFAULT_MOSEK_OPTS,
-                  saveto_dir = rand_saveto_dir)
-    push!(results, (w, d, res))
-    @printf("----------- done in time: %.3f\n", time() - iter_start_time)
+    res = runNNet(
+      nnet_filepath,
+      τs = τs, # There is an opportunity to smartly scale
+      lipsdp_mosek_opts = lipsdp_mosek_opts,
+      chordalsdp_mosek_opts = chordalsdp_mosek_opts,
+      saveto_dir = rand_saveto_dir)
+    push!(results, res)
+    @printf("----------- iter done in time: %.3f\n", time() - iter_start_time)
+  end
+  return results
+end
+
+# Run an ACAS batch
+function runAcasBatch(acas_batch;
+                      τs = 0:15,
+                      lipsdp_mosek_opts = EVALS_MOSEK_OPTS,
+                      chordalsdp_mosek_opts = EVALS_MOSEK_OPTS)
+  batch_size = length(acas_batch)
+  results = Vector{RunNNetResult}()
+  for (i, acas_filepath) in enumerate(acas_batch)
+    iter_start_time = time()
+    println("About to run ACAS [$(i)/$(batch_size)]: $(acas_filepath)")
+    acas_saveto_dir = joinpath(DUMP_DIR, "acas")
+    res = runNNet(
+      acas_filepath,
+      τs = τs,
+      lipsdp_mosek_opts = lipsdp_mosek_opts,
+      chordalsdp_mosek_opts = chordalsdp_mosek_opts,
+      saveto_dir = acas_saveto_dir)
+    push!(results, res)
+    @printf("----------- iter done in time: %.3f\n", time() - iter_start_time)
   end
   return results
 end

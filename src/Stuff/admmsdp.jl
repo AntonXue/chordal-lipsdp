@@ -518,7 +518,7 @@ function runQuery(inst :: QueryInstance, opts :: AdmmSdpOptions)
             final_params.γ[end], string(summary.termination_status))
   end
 
-  return SolutionOutput(
+  return QuerySolution(
     objective_value = final_params.γ[end],
     values = final_params,
     summary = summary,

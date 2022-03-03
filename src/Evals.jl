@@ -5,20 +5,20 @@ using LinearAlgebra
 using Printf
 using Random
 using Parameters
+using DataFrames
+using CSV
 
 include("FastNDeepLipSdp.jl")
-
 import Reexport
 Reexport.@reexport using .FastNDeepLipSdp
 
 # Default options for Mosek
-EVALS_DEFAULT_MOSEK_OPTS = Dict(
-  "QUIET" => true,
-  "MSK_DPAR_OPTIMIZER_MAX_TIME" => 600.0,
-  "INTPNT_CO_TOL_REL_GAP" => 1e-6,
-  "INTPNT_CO_TOL_PFEAS" => 1e-6,
-  "INTPNT_CO_TOL_DFEAS" => 1e-6
-)
+EVALS_MOSEK_OPTS =
+  Dict("QUIET" => true,
+       "MSK_DPAR_OPTIMIZER_MAX_TIME" => 600.0,
+       "INTPNT_CO_TOL_REL_GAP" => 1e-6,
+       "INTPNT_CO_TOL_PFEAS" => 1e-6,
+       "INTPNT_CO_TOL_DFEAS" => 1e-6)
 
 # Call the stuff
 function warmup(; verbose=false)
@@ -26,9 +26,9 @@ function warmup(; verbose=false)
   xdims = [2;3;3;3;3;3;3;2]
   Random.seed!(1234)
   ffnet = randomNetwork(xdims)
-  lipsdp_opts = LipSdpOptions(τ=1, mosek_opts=EVALS_DEFAULT_MOSEK_OPTS, verbose=verbose, use_dual=true)
+  lipsdp_opts = LipSdpOptions(τ=1, mosek_opts=EVALS_MOSEK_OPTS)
   lipsdp_soln = solveLip(ffnet, lipsdp_opts)
-  chordal_opts = ChordalSdpOptions(τ=1, mosek_opts=EVALS_DEFAULT_MOSEK_OPTS, verbose=verbose)
+  chordal_opts = ChordalSdpOptions(τ=1, mosek_opts=EVALS_MOSEK_OPTS)
   chordal_soln = solveLip(ffnet, chordal_opts)
   if verbose; @printf("warmup time: %.3f\n", time() - warmup_start_time) end
 end
@@ -42,19 +42,41 @@ end
   lipsdp_total_times :: VecF64
   lipsdp_vals :: VecF64
   lipsdp_eigmaxs :: VecF64
+  lipsdp_term_statuses :: Vector{String}
 
   chordal_solve_times :: VecF64
   chordal_total_times :: VecF64
   chordal_vals :: VecF64
   chordal_eigmaxs :: VecF64
+  chordal_term_statuses :: Vector{String}
+end
+
+function saveRunNNetResult(res :: RunNNetResult, saveto)
+  # Construct the DataFrame
+  df = DataFrame(
+    taus = res.τs,
+    lipsdp_solve_secs = res.lipsdp_solve_times,
+    lipsdp_max_secs = res.lipsdp_total_times,
+    lipsdp_lipschitz_vals = res.lipsdp_vals,
+    lipsdp_Z_eigmaxs = res.lipsdp_eigmaxs,
+    lipsdp_term_statuses = res.lipsdp_term_statuses,
+    chordal_solve_secs = res.chordal_solve_times,
+    chordal_max_secs = res.chordal_total_times,
+    chordal_lipschitz_vals = res.chordal_vals,
+    chordal_Z_eigmaxs = res.chordal_eigmaxs,
+    chordal_term_statuses = res.chordal_term_statuses)
+  CSV.write(saveto, df)
+  println("Wrote CSV to $(saveto)")
 end
 
 # The function to call for a particular nnet
 function runNNet(nnet_filepath;
                  τs = 0:9,
-                 lipsdp_mosek_opts = EVALS_DEFAULT_MOSEK_OPTS,
-                 chordalsdp_mosek_opts = EVALS_DEFAULT_MOSEK_OPTS,
-                 saveto_dir = "~/dump")
+                 lipsdp_mosek_opts = EVALS_MOSEK_OPTS,
+                 chordalsdp_mosek_opts = EVALS_MOSEK_OPTS,
+                 saveto_dir = "~/dump",
+                 profile_stuff = false) # TODO: implement profiling
+
   # The τ values are meaningful
   @assert sort(τs) == τs && minimum(τs) >= 0
 
@@ -64,18 +86,18 @@ function runNNet(nnet_filepath;
   # Load the stuff and do things
   ffnet = loadNeuralNetwork(nnet_filepath)
   nnet_filename = basename(nnet_filepath)
-  println("Running: $(nnet_filename)")
 
-  lipsdp_solve_times, chordal_solve_times = VecF64([]), VecF64([])
-  lipsdp_total_times, chordal_total_times = VecF64([]), VecF64([])
-  lipsdp_vals, chordal_vals = VecF64([]), VecF64([])
-  lipsdp_eigmaxs, chordal_eigmaxs = VecF64([]), VecF64([])
+  lipsdp_solve_times, chordal_solve_times = VecF64(), VecF64()
+  lipsdp_total_times, chordal_total_times = VecF64(), VecF64()
+  lipsdp_vals, chordal_vals = VecF64(), VecF64()
+  lipsdp_eigmaxs, chordal_eigmaxs = VecF64(), VecF64()
+  lipsdp_term_statuses, chordal_term_statuses = Vector{String}(), Vector{String}()
 
   for (i, τ) in enumerate(τs)
     println("tick for τ[$(i)/$(length(τs))] = $(τ) of $(nnet_filename)")
 
     # LipSdp stuff
-    lipsdp_opts = LipSdpOptions(τ=τ, mosek_opts=lipsdp_mosek_opts, verbose=true, use_dual=true)
+    lipsdp_opts = LipSdpOptions(τ=τ, mosek_opts=lipsdp_mosek_opts, verbose=true)
     lipsdp_soln = solveLip(ffnet, lipsdp_opts)
     lipsdp_Z = makeZ(lipsdp_soln.values[:γ], τ, ffnet)
     eigmax_lipsdp_Z = eigmax(Symmetric(lipsdp_Z))
@@ -85,6 +107,7 @@ function runNNet(nnet_filepath;
     push!(lipsdp_total_times, lipsdp_soln.total_time)
     push!(lipsdp_vals, lipsdp_soln.objective_value)
     push!(lipsdp_eigmaxs, eigmax_lipsdp_Z)
+    push!(lipsdp_term_statuses, lipsdp_soln.termination_status)
 
     # Chordal stuff
     chordal_opts = ChordalSdpOptions(τ=τ, mosek_opts=chordalsdp_mosek_opts, verbose=true)
@@ -97,6 +120,7 @@ function runNNet(nnet_filepath;
     push!(chordal_total_times, chordal_soln.total_time)
     push!(chordal_vals, chordal_soln.objective_value)
     push!(chordal_eigmaxs, eigmax_chordal_Z)
+    push!(chordal_term_statuses, chordal_soln.termination_status)
 
     println("--")
   end
@@ -105,36 +129,38 @@ function runNNet(nnet_filepath;
   times_saveto = "$(saveto_dir)/$(nnet_filename)_times.png"
   times_title = "total times (secs) of $(nnet_filename)"
   labeled_time_lines = [("lipsdp", lipsdp_total_times); ("chordal", chordal_total_times);]
-  Utils.plotLines(τs, labeled_time_lines,
-                  title = times_title,
-                  saveto = times_saveto)
+  Utils.plotLines(τs, labeled_time_lines, title=times_title, saveto=times_saveto)
   println("saved times info at $(times_saveto)")
 
   # Save the lipschitz constant plots
   vals_saveto = "$(saveto_dir)/$(nnet_filename)_vals.png"
   vals_title = "lipschitz upper-bounds of $(nnet_filename)"
   labeled_val_lines = [("lipsdp", lipsdp_vals); ("chordal", chordal_vals);]
-  Utils.plotLines(τs, labeled_val_lines,
-                  title = vals_title,
-                  ylogscale = true,
-                  saveto = vals_saveto)
+  Utils.plotLines(τs, labeled_val_lines, title=vals_title, ylogscale=true, saveto=vals_saveto)
   println("saved vals info at $(vals_saveto)")
 
-  return RunNNetResult(
+  res = RunNNetResult(
     nnet_filepath = nnet_filepath,
     τs = τs,
     lipsdp_solve_times = lipsdp_solve_times,
     lipsdp_total_times = lipsdp_total_times,
     lipsdp_vals = lipsdp_vals,
     lipsdp_eigmaxs = lipsdp_eigmaxs,
+    lipsdp_term_statuses = lipsdp_term_statuses,
     chordal_solve_times = chordal_solve_times,
     chordal_total_times = chordal_total_times,
     chordal_vals = chordal_vals,
-    chordal_eigmaxs = chordal_eigmaxs)
+    chordal_eigmaxs = chordal_eigmaxs,
+    chordal_term_statuses = chordal_term_statuses)
+
+  # Save the CSV
+  csv_saveto = joinpath(saveto_dir, "$(nnet_filename)_runs.csv")
+  saveRunNNetResult(res, csv_saveto)
+  return res
 end
 
 #
-export EVALS_DEFAULT_MOSEK_OPTS
+export EVALS_MOSEK_OPTS
 export RunNNetResult
 export warmup, runNNet
 

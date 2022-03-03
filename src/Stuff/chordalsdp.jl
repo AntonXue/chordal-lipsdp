@@ -6,14 +6,15 @@ using Dualization
 using Printf
 
 # Default options for Mosek
-CHORDALSDP_DEFAULT_MOSEK_OPTS = Dict("QUIET" => true)
+CHORDALSDP_DEFAULT_MOSEK_OPTS =
+  Dict("QUIET" => true)
 
 # How the construction is done
 @with_kw struct ChordalSdpOptions <: SdpOptions
-  τ :: Int = 0
-  use_dual :: Bool = false
+  τ :: Int = 0; @assert τ >= 0
   include_default_mosek_opts :: Bool = true
   mosek_opts :: Dict{String, Any} = Dict()
+  use_dual :: Bool = false
   verbose :: Bool = false
 end
 
@@ -66,10 +67,8 @@ end
 function runQuery(inst :: QueryInstance, opts :: ChordalSdpOptions)
   total_start_time = time()
 
-  # Use the dual optimizer?
+  # Set up model and add solver options, with the defaults first
   model = opts.use_dual ? Model(dual_optimizer(Mosek.Optimizer)) : Model(Mosek.Optimizer)
-
-  # Do the solver options, with defaults first so they can be overriden
   pre_mosek_opts = opts.include_default_mosek_opts ? CHORDALSDP_DEFAULT_MOSEK_OPTS : Dict()
   todo_mosek_opts = merge(pre_mosek_opts, opts.mosek_opts)
   for (k, v) in todo_mosek_opts; set_optimizer_attribute(model, k, v) end
@@ -84,7 +83,7 @@ function runQuery(inst :: QueryInstance, opts :: ChordalSdpOptions)
             objective_value(model), string(summary.termination_status))
   end
 
-  return SolutionOutput(
+  return QuerySolution(
     objective_value = objective_value(model),
     values = values,
     summary = summary,
