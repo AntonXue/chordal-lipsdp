@@ -15,6 +15,7 @@ Reexport.@reexport using .FastNDeepLipSdp
 # Default options for Mosek
 EVALS_MOSEK_OPTS =
   Dict("QUIET" => true,
+       # "MSK_IPAR_INTPNT_SCALING" => 3,
        "MSK_DPAR_OPTIMIZER_MAX_TIME" => 600.0,
        "INTPNT_CO_TOL_REL_GAP" => 1e-6,
        "INTPNT_CO_TOL_PFEAS" => 1e-6,
@@ -56,12 +57,12 @@ function saveRunNNetResult(res :: RunNNetResult, saveto)
   df = DataFrame(
     taus = res.τs,
     lipsdp_solve_secs = res.lipsdp_solve_times,
-    lipsdp_max_secs = res.lipsdp_total_times,
+    lipsdp_total_secs = res.lipsdp_total_times,
     lipsdp_lipschitz_vals = res.lipsdp_vals,
     lipsdp_Z_eigmaxs = res.lipsdp_eigmaxs,
     lipsdp_term_statuses = res.lipsdp_term_statuses,
     chordal_solve_secs = res.chordal_solve_times,
-    chordal_max_secs = res.chordal_total_times,
+    chordal_total_secs = res.chordal_total_times,
     chordal_lipschitz_vals = res.chordal_vals,
     chordal_Z_eigmaxs = res.chordal_eigmaxs,
     chordal_term_statuses = res.chordal_term_statuses)
@@ -75,6 +76,7 @@ function runNNet(nnet_filepath;
                  lipsdp_mosek_opts = EVALS_MOSEK_OPTS,
                  chordalsdp_mosek_opts = EVALS_MOSEK_OPTS,
                  saveto_dir = "~/dump",
+                 weight_scale = 1.0,
                  profile_stuff = false) # TODO: implement profiling
 
   # The τ values are meaningful
@@ -84,7 +86,8 @@ function runNNet(nnet_filepath;
   isdir(saveto_dir) || mkdir(saveto_dir)
 
   # Load the stuff and do things
-  ffnet = loadNeuralNetwork(nnet_filepath)
+  raw_ffnet = loadNeuralNetwork(nnet_filepath)
+  ffnet = scaleNeuralNetwork(raw_ffnet, weight_scale)
   nnet_filename = basename(nnet_filepath)
 
   lipsdp_solve_times, chordal_solve_times = VecF64(), VecF64()

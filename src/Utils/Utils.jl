@@ -94,11 +94,18 @@ function loadNeuralNetwork(nnet_filepath :: String)
   return ffnet
 end
 
+function scaleNeuralNetwork(ffnet :: NeuralNetwork, scale :: Float64)
+  @assert scale > 0
+  scaledMs = ffnet.Ms .* scale
+  new_ffnet = NeuralNetwork(activ=ffnet.activ, xdims=ffnet.xdims, Ms=scaledMs)
+  return new_ffnet
+end
+
 #
 export randomNetwork
 export runNetwork, randomTrajectories
 export plotRandomTrajectories, plotLines
-export loadNeuralNetwork
+export loadNeuralNetwork, scaleNeuralNetwork
 
 end # End module
 

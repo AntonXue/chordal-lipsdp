@@ -12,12 +12,15 @@ include("../src/Evals.jl"); using .Evals
 function parseArgs()
   argparse_settings = ArgParseSettings()
   @add_arg_table argparse_settings begin
+    "--nnet"
+      help = "A particular nnet that is loaded"
     "--nnetdir"
       help = "Directory of the nnet files"
-      required = true
+      # required = true
+      default = "nnets"
     "--dumpdir"
       help = "Directory of where to dump things"
-      default = "~/dump"
+      default = joinpath(homedir(), "dump")
     "--skipwarmup"
       help = "Do not do the warmups"
       action = :store_true
@@ -107,4 +110,12 @@ if !args["skipwarmup"]
 end
 
 @printf("repl start time: %.3f\n", time() - hello_start_time)
+
+LAXER_MOSEK_OPTS =
+  merge(EVALS_MOSEK_OPTS,
+        Dict("INTPNT_CO_TOL_REL_GAP" => 1e-4,
+             "INTPNT_CO_TOL_DFEAS" => 1e-4,
+             "INTPNT_CO_TOL_PFEAS" => 1e-4,
+             "MSK_DPAR_INTPNT_TOL_DSAFE" => 2.0,
+             "MSK_DPAR_INTPNT_TOL_DSAFE" => 2.0))
 

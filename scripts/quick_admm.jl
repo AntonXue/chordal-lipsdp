@@ -49,7 +49,7 @@ lip_opts = LipSdpOptions(τ=τ, verbose=true)
 # init_params, init_time = initAdmmParams(inst, admm_opts)
 admm_opts = AdmmSdpOptions(τ=τ, verbose=true, max_steps=5000, ρ_init=1)
 params, _ = initAdmmParams(inst, admm_opts)
-cache, _= initAdmmCache(inst, params, admm_opts)
+# cache, _= initAdmmCache(inst, params, admm_opts)
 
 admm_soln = runQuery(inst, admm_opts)
 final_params = admm_soln.values
