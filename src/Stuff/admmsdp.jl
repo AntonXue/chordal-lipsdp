@@ -261,21 +261,19 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   vksum = sum(cache.Hs[k]' * var_vs[k] for k in 1:params.num_cliques)
   @constraint(model, z .== vksum)
 
-  # The λ penalty
-  softλnorms = @variable(model, [1:params.num_cliques])
+  # Norm stuff, with the λ terms first, then the μ term
+  var_norms = @variable(model, [1:params.num_cliques+1])
   for k in 1:params.num_cliques
-    softλk = params.zs[k] - var_vs[k] + (params.λs[k] / params.ρ)
-    @constraint(model, [softλnorms[k]; softλk] in SecondOrderCone())
+    λtermk = params.zs[k] - var_vs[k] + (params.λs[k] / params.ρ)
+    @constraint(model, [var_norms[k]; λtermk] in SecondOrderCone())
   end
 
   # The μ penalty
-  softμ = params.ω - var_γ + (params.μ / params.ρ)
-  softμnorm = @variable(model)
-  @constraint(model, [softμnorm; softμ] in SecondOrderCone())
+  μterm = params.ω - var_γ + (params.μ / params.ρ)
+  @constraint(model, [var_norms[end]; μterm] in SecondOrderCone())
   
   # Form the objective
-  softnorm2_sum = sum(sλnk^2 for sλnk in softλnorms) + softμnorm^2
-  obj = var_γ[end] + (params.ρ / 2) * softnorm2_sum
+  obj = var_γ[end] + (params.ρ / 2) * sum(n^2 for n in var_norms)
   @objective(model, Min, obj)
 
   # Solve and return
@@ -315,21 +313,19 @@ function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
     push!(var_zs, vec(var_Zk))
   end
 
-  # The λ penalty term
-  softλnorms = @variable(model, [1:params.num_cliques])
+  # The norm terms with the λ terms first, and the μ term last
+  var_norms = @variable(model, [1:params.num_cliques+1])
   for k in 1:params.num_cliques
-    softλk = var_zs[k] - params.vs[k] + (params.λs[k] / params.ρ)
-    @constraint(model, [softλnorms[k]; softλk] in SecondOrderCone())
+    λtermk = var_zs[k] - params.vs[k] + (params.λs[k] / params.ρ)
+    @constraint(model, [var_norms[k]; λtermk] in SecondOrderCone())
   end
 
   # The μ penalty term
-  softμ = var_ω - params.γ + (params.μ / params.ρ)
-  softμnorm = @variable(model)
-  @constraint(model, [softμnorm; softμ] in SecondOrderCone())
+  μterm = var_ω - params.γ + (params.μ / params.ρ)
+  @constraint(model, [var_norms[end]; μterm] in SecondOrderCone())
 
   # The objective
-  softλnorm2_sum = sum(sλnk^2 for sλnk in softλnorms)
-  obj = softλnorm2_sum + softμnorm^2
+  obj = sum(n^2 for n in var_norms)
   @objective(model, Min, obj)
 
   # Solve and return

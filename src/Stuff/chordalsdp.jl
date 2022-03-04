@@ -45,7 +45,7 @@ function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
 
   # Assert the equality constraint and objective
   Zdim = sum(inst.ffnet.edims)
-  Zksum = sum(Ec(kstart, Ckdim, Zdim)' * Zs[k] * Ec(kstart, Ckdim, Zdim) for (k, kstart, Ckdim) in cinfos)
+  Zksum = sum(Ec(ks, Ckdim, Zdim)' * Zs[k] * Ec(ks, Ckdim, Zdim) for (k, ks, Ckdim) in cinfos)
   @constraint(model, Z .== Zksum)
   @objective(model, Min, γ[end]) # γ[end] is γlip
 
