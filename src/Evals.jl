@@ -76,7 +76,6 @@ function runNNet(nnet_filepath;
                  lipsdp_mosek_opts = EVALS_MOSEK_OPTS,
                  chordalsdp_mosek_opts = EVALS_MOSEK_OPTS,
                  saveto_dir = "~/dump",
-                 weight_scale = 1.0,
                  profile_stuff = false) # TODO: implement profiling
 
   # The τ values are meaningful
@@ -86,8 +85,9 @@ function runNNet(nnet_filepath;
   isdir(saveto_dir) || mkdir(saveto_dir)
 
   # Load the stuff and do things
-  raw_ffnet = loadNeuralNetwork(nnet_filepath)
-  ffnet = scaleNeuralNetwork(raw_ffnet, weight_scale)
+  ffnet, weight_scales = loadNeuralNetwork(nnet_filepath, 2.0)
+  # raw_ffnet = loadNeuralNetwork(nnet_filepath)
+  # ffnet = scaleNeuralNetwork(raw_ffnet, weight_scale)
   nnet_filename = basename(nnet_filepath)
 
   lipsdp_solve_times, chordal_solve_times = VecF64(), VecF64()
@@ -102,26 +102,28 @@ function runNNet(nnet_filepath;
     # LipSdp stuff
     lipsdp_opts = LipSdpOptions(τ=τ, mosek_opts=lipsdp_mosek_opts, verbose=true)
     lipsdp_soln = solveLip(ffnet, lipsdp_opts)
+    lipsdp_lipconst = lipsdp_soln.objective_value / prod(weight_scales)
     lipsdp_Z = makeZ(lipsdp_soln.values[:γ], τ, ffnet)
     eigmax_lipsdp_Z = eigmax(Symmetric(lipsdp_Z))
-    @printf("\tlipsdp eigmax: %.6f\n", eigmax_lipsdp_Z)
+    println("\teigmax: $(eigmax_lipsdp_Z) \tlipconst: $(lipsdp_lipconst)")
 
     push!(lipsdp_solve_times, lipsdp_soln.solve_time)
     push!(lipsdp_total_times, lipsdp_soln.total_time)
-    push!(lipsdp_vals, lipsdp_soln.objective_value)
+    push!(lipsdp_vals, lipsdp_lipconst)
     push!(lipsdp_eigmaxs, eigmax_lipsdp_Z)
     push!(lipsdp_term_statuses, lipsdp_soln.termination_status)
 
     # Chordal stuff
     chordal_opts = ChordalSdpOptions(τ=τ, mosek_opts=chordalsdp_mosek_opts, verbose=true)
     chordal_soln = solveLip(ffnet, chordal_opts)
+    chordal_lipconst = chordal_soln.objective_value / prod(weight_scales)
     chordal_Z = makeZ(chordal_soln.values[:γ], τ, ffnet)
     eigmax_chordal_Z = eigmax(Symmetric(chordal_Z))
-    @printf("\tchordal eigmax: %.5f\n", eigmax_chordal_Z)
+    println("\teigmax: $(eigmax_chordal_Z) \tlipconst: $(chordal_lipconst)")
 
     push!(chordal_solve_times, chordal_soln.solve_time)
     push!(chordal_total_times, chordal_soln.total_time)
-    push!(chordal_vals, chordal_soln.objective_value)
+    push!(chordal_vals, chordal_lipconst)
     push!(chordal_eigmaxs, eigmax_chordal_Z)
     push!(chordal_term_statuses, chordal_soln.termination_status)
 

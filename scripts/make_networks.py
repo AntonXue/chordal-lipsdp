@@ -6,7 +6,10 @@ import argparse
 import math
 import numpy as np
 
-NNET_PATH = "/home/taro/stuff/nv-repos"
+# Change this to be the directory where you ran
+#   git clone https://github.com/sisl/NNet.git
+NNET_PATH = os.path.join(os.path.expanduser("~"), "stuff", "nv-repos")
+
 try:
   sys.path.index(NNET_PATH)
 except:
@@ -20,7 +23,7 @@ INPUT_DIM = 2
 OUTPUT_DIM = 2
 # LAYER_DIMS = [5, 10, 15, 20]
 LAYER_DIMS = [10, 20, 30, 40, 50, 60]
-NUM_LAYERS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
+NUM_LAYERS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
 
 # Generate a random network given the number of layers, input, output, and layer dimensions
 def random_params(input_dim, output_dim, layer_dim, num_layers, sigma):
@@ -33,7 +36,8 @@ def random_params(input_dim, output_dim, layer_dim, num_layers, sigma):
 def enumerate_random_params():
   for layer_dim in LAYER_DIMS:
     for num_layers in NUM_LAYERS:
-      sigma = 1.5 / math.sqrt(layer_dim + num_layers)
+      # sigma = 1.5 / math.sqrt(layer_dim + num_layers)
+      sigma = 1.0
       input_dim = INPUT_DIM
       output_dim = OUTPUT_DIM
       xdims, Ws, bs = random_params(input_dim, output_dim, layer_dim, num_layers, sigma)
