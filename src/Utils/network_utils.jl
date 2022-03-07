@@ -55,6 +55,7 @@ function loadNeuralNetwork(nnet_filepath :: String, target_opnorm :: Float64)
   Ws, bs = [M[:,1:end-1] for M in ffnet.Ms], [M[:,end] for M in ffnet.Ms]
   αs = [target_opnorm / opnorm(W) for W in Ws]
   # αs = maximum(αs) * ones(ffnet.K)
+  # αs = 2.0 * ones(ffnet.K)
   scaled_Ws = [αs[k] * Ws[k] for k in 1:ffnet.K]
   scaled_bs = [prod(αs[1:k]) * bs[k] for k in 1:ffnet.K]
   scaled_Ms = [[scaled_Ws[k] scaled_bs[k]] for k in 1:ffnet.K]

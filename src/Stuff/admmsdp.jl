@@ -58,9 +58,9 @@ end
 # Parameters during stepation
 @with_kw mutable struct AdmmParams
   # Mutable parts
-  γ :: VecF64
-  vs :: Vector{VecF64}
   ω :: VecF64
+  vs :: Vector{VecF64}
+  γ :: VecF64
   zs :: Vector{VecF64}
   μ :: VecF64
   λs :: Vector{VecF64}
@@ -210,12 +210,12 @@ function projectNsd(xk :: VecF64)
 end
 
 # Step X
-#   minimize  γlip + (ρ/2) sum ||zk - vk + λk/ρ||^2 + (ρ/2) ||ω - γ + μ/ρ||^2
-#   subj to   z(γ) = sum Hk' * vk
+#   minimize  ωlip + (ρ/2) sum ||zk - vk + λk/ρ||^2 + (ρ/2) ||γ - ω + μ/ρ||^2
+#   subj to   z(ω) = sum Hk' * vk
 function stepX(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   Hzλsum = sum(cache.Hs[k]' * (params.zs[k] + (params.λs[k] / params.ρ)) for k in 1:params.num_cliques)
   u1 = VecF64(Hzλsum - cache.zaff)
-  u2 = VecF64(params.ω + (1 / params.ρ) * (params.μ - e(params.γdim, params.γdim)))
+  u2 = VecF64(params.γ + (1 / params.ρ) * (params.μ - e(params.γdim, params.γdim)))
 
   # Solve for x via P L Lt Pt x = J * u2 - u1
   # First solve P L y = J * u2 - u1
@@ -230,10 +230,10 @@ function stepX(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
   Ptx = [Ptx_r; zeros(length(rhs) - chol.rank + 1)]
   x = Ptx[invperm(chol.p)]
 
-  # Now can solve for γ and vs
-  new_γ = u2 - cache.J' * x
+  # Now can solve for ω and vs
+  new_ω = u2 - cache.J' * x
   new_vs = [params.zs[k] + (params.λs[k] / params.ρ) + cache.Hs[k] * x for k in 1:params.num_cliques]
-  return new_γ, new_vs
+  return new_ω, new_vs
 end
 
 # Use a solver to do the stepping
@@ -246,9 +246,8 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_X_tol)
 
   # Set up the variables
-  γdim = params.γdim
-  var_γ = @variable(model, [1:γdim])
-  # @constraint(model, var_γ[1:γdim] .>= 0)
+  ωdim = params.γdim
+  var_ω = @variable(model, [1:ωdim])
 
   var_vs = Vector{Any}()
   for (k, _, Ckdim) in params.cinfos
@@ -257,7 +256,7 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   end
 
   # Equality constraints
-  z = cache.J * var_γ + cache.zaff
+  z = cache.J * var_ω + cache.zaff
   vksum = sum(cache.Hs[k]' * var_vs[k] for k in 1:params.num_cliques)
   @constraint(model, z .== vksum)
 
@@ -269,29 +268,29 @@ function stepXsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   end
 
   # The μ penalty
-  μterm = params.ω - var_γ + (params.μ / params.ρ)
+  μterm = params.γ - var_ω + (params.μ / params.ρ)
   @constraint(model, [var_norms[end]; μterm] in SecondOrderCone())
   
   # Form the objective
-  obj = var_γ[end] + (params.ρ / 2) * sum(n^2 for n in var_norms)
+  obj = var_ω[end] + (params.ρ / 2) * sum(n^2 for n in var_norms)
   @objective(model, Min, obj)
 
   # Solve and return
   optimize!(model)
-  new_γ = value.(var_γ)
+  new_ω = value.(var_ω)
   new_vs = [value.(var_vk) for var_vk in var_vs]
-  return new_γ, new_vs
+  return new_ω, new_vs
 end
 
 # Y = {z1, ..., zp}
-# minimize    (ρ/2) sum ||zk - vk + λk/ρ||^2 + (ρ/2) ||ω - γ + μ/ρ||^2
+# minimize    (ρ/2) sum ||zk - vk + λk/ρ||^2 + (ρ/2) ||γ - ω + μ/ρ||^2
 # subject to  ω >= 0 and each zk <= 0
 function stepY(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-  tmp_ω = params.γ - (params.μ / params.ρ)
+  tmp_γ = params.ω - (params.μ / params.ρ)
   tmp_zs = [params.vs[k] - (params.λs[k] / params.ρ) for k in 1:params.num_cliques]
-  new_ω = projectRplus(tmp_ω)
+  new_γ = projectRplus(tmp_γ)
   new_zs = projectNsd.(tmp_zs)
-  return new_ω, new_zs
+  return new_γ, new_zs
 end
 
 function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
@@ -303,8 +302,8 @@ function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   set_optimizer_attribute(model, "INTPNT_CO_TOL_DFEAS", opts.solver_Y_tol)
 
   # Set up the variables
-  var_ω = @variable(model, [1:params.γdim])
-  @constraint(model, var_ω[1:params.γdim] .>= 0)
+  var_γ = @variable(model, [1:params.γdim])
+  @constraint(model, var_γ[1:params.γdim] .>= 0)
 
   var_zs = Vector{Any}()
   for (_, _, Ckdim) in params.cinfos
@@ -321,7 +320,7 @@ function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
   end
 
   # The μ penalty term
-  μterm = var_ω - params.γ + (params.μ / params.ρ)
+  μterm = var_γ - params.ω + (params.μ / params.ρ)
   @constraint(model, [var_norms[end]; μterm] in SecondOrderCone())
 
   # The objective
@@ -330,14 +329,14 @@ function stepYsolver(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOp
 
   # Solve and return
   optimize!(model)
-  new_ω = value.(var_ω)
+  new_γ = value.(var_γ)
   new_zs = [value.(var_zk) for var_zk in var_zs]
-  return new_ω, new_zs
+  return new_γ, new_zs
 end
 
 # Z = {μ, λ}
 function stepZ(params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-  new_μ = params.μ + params.ρ * (params.ω - params.γ)
+  new_μ = params.μ + params.ρ * (params.γ - params.ω)
   new_λs = [params.λs[k] + params.ρ * (params.zs[k] - params.vs[k]) for k in 1:params.num_cliques]
   return new_μ, new_λs
 end
@@ -372,7 +371,7 @@ end
 
 # Get the k largest eigenvalues of Z in decending order
 function eigvalsZ(k :: Int, params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOptions)
-  z = makez(params, cache)
+  z = cache.J * params.γ + cache.zaff
   zdim = Int(round(sqrt(length(z))))
   Z = Symmetric(Matrix(reshape(z, (zdim, zdim))))
   eigsZ = eigvals(Z)
@@ -400,18 +399,18 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
 
     # X stuff
     X_start_time = time()
-    new_γ, new_vs = stepX(step_params, cache, opts)
-    # new_γ, new_vs = stepXsolver(step_params, cache, opts)
-    step_params.γ = αx * new_γ + (1 - αx) * step_params.γ
+    new_ω, new_vs = stepX(step_params, cache, opts)
+    # new_ω, new_vs = stepXsolver(step_params, cache, opts)
+    step_params.ω = αx * new_ω + (1 - αx) * step_params.ω
     step_params.vs = αx * new_vs + (1 - αx) * step_params.vs
     X_time = time() - X_start_time
     total_X_time += X_time
 
     # Y stuff
     Y_start_time = time()
-    new_ω, new_zs = stepY(step_params, cache, opts)
-    # new_ω, new_zs = stepYsolver(step_params, cache, opts)
-    step_params.ω = αy * new_ω + (1 - αy) * step_params.ω
+    new_γ, new_zs = stepY(step_params, cache, opts)
+    # new_γ, new_zs = stepYsolver(step_params, cache, opts)
+    step_params.γ = αy * new_γ + (1 - αy) * step_params.γ
     step_params.zs = αy * new_zs + (1 - αy) * step_params.zs
     Y_time = time() - Y_start_time
     total_Y_time += Y_time
@@ -467,7 +466,7 @@ function stepAdmm(_params :: AdmmParams, cache :: AdmmCache, opts :: AdmmSdpOpti
       λmaxZ = eigmax(Z)
       push!(λmax_hist, λmaxZ)
       if opts.verbose && mod(t, opts.verbose_every_t) == 0
-        @printf("\t\tλmax Z(ω): %.4f\n", λmaxZ)
+        @printf("\t\tλmax Z(γ): %.4f\n", λmaxZ)
       end
       if opts.stop_at_first_nsd && λmaxZ < opts.nsd_tol; break end
     end

@@ -17,9 +17,9 @@ EVALS_MOSEK_OPTS =
   Dict("QUIET" => true,
        # "MSK_IPAR_INTPNT_SCALING" => 3,
        "MSK_DPAR_OPTIMIZER_MAX_TIME" => 600.0,
-       "INTPNT_CO_TOL_REL_GAP" => 1e-11,
-       "INTPNT_CO_TOL_PFEAS" => 1e-11,
-       "INTPNT_CO_TOL_DFEAS" => 1e-11)
+       "INTPNT_CO_TOL_REL_GAP" => 1e-9,
+       "INTPNT_CO_TOL_PFEAS" => 1e-9,
+       "INTPNT_CO_TOL_DFEAS" => 1e-9)
 
 # Call the stuff
 function warmup(; verbose=false)
@@ -77,6 +77,7 @@ function runNNet(nnet_filepath;
                  chordalsdp_mosek_opts = EVALS_MOSEK_OPTS,
                  saveto_dir = joinpath(homedir(), "dump"),
                  target_opnorm = 2.0,
+                 do_plots = true,
                  profile_stuff = false) # TODO: implement profiling
 
   # The τ values are meaningful
@@ -92,6 +93,7 @@ function runNNet(nnet_filepath;
   else
     ffnet, weight_scales = loadNeuralNetwork(nnet_filepath, target_opnorm)
   end
+
   # raw_ffnet = loadNeuralNetwork(nnet_filepath)
   # ffnet = scaleNeuralNetwork(raw_ffnet, weight_scale)
   nnet_filename = basename(nnet_filepath)
@@ -137,18 +139,20 @@ function runNNet(nnet_filepath;
   end
 
   # Save the time stuff
-  times_saveto = "$(saveto_dir)/$(nnet_filename)_times.png"
-  times_title = "total times (secs) of $(nnet_filename)"
-  labeled_time_lines = [("lipsdp", lipsdp_total_times); ("chordal", chordal_total_times);]
-  Utils.plotLines(τs, labeled_time_lines, title=times_title, saveto=times_saveto)
-  println("saved times info at $(times_saveto)")
+  if do_plots
+    times_saveto = "$(saveto_dir)/$(nnet_filename)_times.png"
+    times_title = "total times (secs) of $(nnet_filename)"
+    labeled_time_lines = [("lipsdp", lipsdp_total_times); ("chordal", chordal_total_times);]
+    Utils.plotLines(τs, labeled_time_lines, title=times_title, saveto=times_saveto)
+    println("saved times info at $(times_saveto)")
 
-  # Save the lipschitz constant plots
-  vals_saveto = "$(saveto_dir)/$(nnet_filename)_vals.png"
-  vals_title = "lipschitz upper-bounds of $(nnet_filename)"
-  labeled_val_lines = [("lipsdp", lipsdp_vals); ("chordal", chordal_vals);]
-  Utils.plotLines(τs, labeled_val_lines, title=vals_title, ylogscale=true, saveto=vals_saveto)
-  println("saved vals info at $(vals_saveto)")
+    # Save the lipschitz constant plots
+    vals_saveto = "$(saveto_dir)/$(nnet_filename)_vals.png"
+    vals_title = "lipschitz upper-bounds of $(nnet_filename)"
+    labeled_val_lines = [("lipsdp", lipsdp_vals); ("chordal", chordal_vals);]
+    Utils.plotLines(τs, labeled_val_lines, title=vals_title, ylogscale=true, saveto=vals_saveto)
+    println("saved vals info at $(vals_saveto)")
+  end
 
   res = RunNNetResult(
     nnet_filepath = nnet_filepath,
