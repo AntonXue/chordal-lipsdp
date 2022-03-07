@@ -1,22 +1,26 @@
 
 # Generate trajectories from a unit box
-function randomTrajectories(N :: Int, ffnet :: NeuralNetwork)
-  Random.seed!(1234)
-  x1s = 2 * (rand(ffnet.xdims[1], N) .- 0.5) # Unit box
-  # x1s = x1s ./ norm(x1s) # Unit vectors
-  xfs = [runNetwork(x1s[:,k], ffnet) for k in 1:N]
+function randomTrajectories(N :: Int, ffnet :: NeuralNetwork, x1min :: VecF64, x1max :: VecF64)
+  @assert length(x1min) == length(x1max) == ffnet.xdims[1]
+  xgaps = x1max - x1min
+  box01_points = rand(ffnet.xdims[1], N)
+  x1s = [x1min + (p .* xgaps) for p in eachcol(box01_points)]
+  xfs = [runNetwork(x1, ffnet) for x1 in x1s]
   return xfs
 end
 
 # Plot some data to a file
-function plotRandomTrajectories(N :: Int, ffnet :: NeuralNetwork, imgfile="~/Desktop/hello.png")
+function plotRandomTrajectories(N :: Int, ffnet :: NeuralNetwork;
+                                x1min = -ones(ffnet.xdims[1]),
+                                x1max = ones(ffnet.xdims[1]),
+                                saveto = "~/Desktop/hello.png")
   # Make sure we can actually plot these in 2D
   @assert ffnet.xdims[end] == 2
-  xfs = randomTrajectories(N, ffnet)
+  xfs = randomTrajectories(N, ffnet, x1min, x1max)
   d1s = [xf[1] for xf in xfs]
   d2s = [xf[2] for xf in xfs]
   p = scatter(d1s, d2s, markersize=2, alpha=0.3)
-  savefig(p, imgfile)
+  savefig(p, saveto)
 end
 
 # Plot different line data

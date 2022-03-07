@@ -57,8 +57,8 @@ end
 # Calculate how long the γ should be given a particular τ
 # Note that γ = [γac; γlip]
 function γlength(τ :: Int, ffnet :: NeuralNetwork)
-  @assert 0 <= τ
   Tdim = sum(ffnet.fdims)
+  @assert 0 <= τ <= Tdim - 1
   return sum((Tdim-τ):Tdim) + 1
 end
 

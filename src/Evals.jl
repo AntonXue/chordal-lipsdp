@@ -17,9 +17,9 @@ EVALS_MOSEK_OPTS =
   Dict("QUIET" => true,
        # "MSK_IPAR_INTPNT_SCALING" => 3,
        "MSK_DPAR_OPTIMIZER_MAX_TIME" => 600.0,
-       "INTPNT_CO_TOL_REL_GAP" => 1e-6,
-       "INTPNT_CO_TOL_PFEAS" => 1e-6,
-       "INTPNT_CO_TOL_DFEAS" => 1e-6)
+       "INTPNT_CO_TOL_REL_GAP" => 1e-11,
+       "INTPNT_CO_TOL_PFEAS" => 1e-11,
+       "INTPNT_CO_TOL_DFEAS" => 1e-11)
 
 # Call the stuff
 function warmup(; verbose=false)
@@ -75,7 +75,8 @@ function runNNet(nnet_filepath;
                  τs = 0:9,
                  lipsdp_mosek_opts = EVALS_MOSEK_OPTS,
                  chordalsdp_mosek_opts = EVALS_MOSEK_OPTS,
-                 saveto_dir = "~/dump",
+                 saveto_dir = joinpath(homedir(), "dump"),
+                 target_opnorm = 2.0,
                  profile_stuff = false) # TODO: implement profiling
 
   # The τ values are meaningful
@@ -85,7 +86,12 @@ function runNNet(nnet_filepath;
   isdir(saveto_dir) || mkdir(saveto_dir)
 
   # Load the stuff and do things
-  ffnet, weight_scales = loadNeuralNetwork(nnet_filepath, 2.0)
+  if target_opnorm isa Nothing
+    ffnet = loadNeuralNetwork(nnet_filepath)
+    weight_scales = ones(ffnet.K)
+  else
+    ffnet, weight_scales = loadNeuralNetwork(nnet_filepath, target_opnorm)
+  end
   # raw_ffnet = loadNeuralNetwork(nnet_filepath)
   # ffnet = scaleNeuralNetwork(raw_ffnet, weight_scale)
   nnet_filename = basename(nnet_filepath)
@@ -102,7 +108,7 @@ function runNNet(nnet_filepath;
     # LipSdp stuff
     lipsdp_opts = LipSdpOptions(τ=τ, mosek_opts=lipsdp_mosek_opts, verbose=true)
     lipsdp_soln = solveLip(ffnet, lipsdp_opts)
-    lipsdp_lipconst = lipsdp_soln.objective_value / prod(weight_scales)
+    lipsdp_lipconst = sqrt(lipsdp_soln.objective_value) / prod(weight_scales)
     lipsdp_Z = makeZ(lipsdp_soln.values[:γ], τ, ffnet)
     eigmax_lipsdp_Z = eigmax(Symmetric(lipsdp_Z))
     println("\teigmax: $(eigmax_lipsdp_Z) \tlipconst: $(lipsdp_lipconst)")
@@ -116,7 +122,7 @@ function runNNet(nnet_filepath;
     # Chordal stuff
     chordal_opts = ChordalSdpOptions(τ=τ, mosek_opts=chordalsdp_mosek_opts, verbose=true)
     chordal_soln = solveLip(ffnet, chordal_opts)
-    chordal_lipconst = chordal_soln.objective_value / prod(weight_scales)
+    chordal_lipconst = sqrt(chordal_soln.objective_value) / prod(weight_scales)
     chordal_Z = makeZ(chordal_soln.values[:γ], τ, ffnet)
     eigmax_chordal_Z = eigmax(Symmetric(chordal_Z))
     println("\teigmax: $(eigmax_chordal_Z) \tlipconst: $(chordal_lipconst)")

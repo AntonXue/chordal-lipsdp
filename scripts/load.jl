@@ -24,4 +24,6 @@ args = parseArgs()
 nnet = Utils.NNet(args["nnet"])
 ffnet = loadNeuralNetwork(args["nnet"])
 
+scaled_ffnet, αs = loadNeuralNetwork(args["nnet"], 2.0)
+
 

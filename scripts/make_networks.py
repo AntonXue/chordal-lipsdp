@@ -37,7 +37,7 @@ def enumerate_random_params():
   for layer_dim in LAYER_DIMS:
     for num_layers in NUM_LAYERS:
       # sigma = 1.5 / math.sqrt(layer_dim + num_layers)
-      sigma = 1.0
+      sigma = 1.0 / math.sqrt(INPUT_DIM + OUTPUT_DIM)
       input_dim = INPUT_DIM
       output_dim = OUTPUT_DIM
       xdims, Ws, bs = random_params(input_dim, output_dim, layer_dim, num_layers, sigma)

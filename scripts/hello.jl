@@ -78,7 +78,7 @@ end
 
 # Run an ACAS batch
 function runAcasBatch(acas_batch;
-                      τs = 0:15,
+                      τs = 0:6,
                       lipsdp_mosek_opts = EVALS_MOSEK_OPTS,
                       chordalsdp_mosek_opts = EVALS_MOSEK_OPTS)
   batch_size = length(acas_batch)
@@ -111,11 +111,7 @@ end
 
 @printf("repl start time: %.3f\n", time() - hello_start_time)
 
-LAXER_MOSEK_OPTS =
-  merge(EVALS_MOSEK_OPTS,
-        Dict("INTPNT_CO_TOL_REL_GAP" => 1e-4,
-             "INTPNT_CO_TOL_DFEAS" => 1e-4,
-             "INTPNT_CO_TOL_PFEAS" => 1e-4,
-             "MSK_DPAR_INTPNT_TOL_DSAFE" => 2.0,
-             "MSK_DPAR_INTPNT_TOL_DSAFE" => 2.0))
+unscaled_ffnet = loadNeuralNetwork(args["nnet"])
+scaled_ffnet, weight_scales = loadNeuralNetwork(args["nnet"], 2.0)
+
 
