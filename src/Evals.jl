@@ -53,7 +53,7 @@ function runNNet(nnet_filepath, method;
   others = Vector{Any}()
   for (i, τ) in enumerate(τs)
     println("tick for τ[$(i)/$(length(τs))] = $(τ) of $(nnet_filename)")
-    println("now: $(now) (running $(method))")
+    println("now: $(now()) (running $(method))")
 
     # Run different methods depending on what is specified
     if method == :lipsdp
@@ -61,7 +61,7 @@ function runNNet(nnet_filepath, method;
       soln = solveLipschitz(ffnet, opts)
       lipconst = sqrt(soln.values[:γ][end]) / prod(weight_scales)
       eigmaxZ = eigmax(Symmetric(makeZ(soln.values[:γ], τ, ffnet)))
-      @printf("\teigmaxZ: %.5f \t\tlipconst: %f (%s)\n", eigmaxZ, lipconst, soln.termination_status)
+      @printf("\teigmaxZ: %.5f \t\tlipconst: %.5e (%s)\n", eigmaxZ, lipconst, soln.termination_status)
       push!(others, eigmaxZ)
 
     elseif method == :chordalsdp
@@ -69,7 +69,7 @@ function runNNet(nnet_filepath, method;
       soln = solveLipschitz(ffnet, opts)
       lipconst = sqrt(soln.values[:γ][end]) / prod(weight_scales)
       eigmaxZ = eigmax(Symmetric(makeZ(soln.values[:γ], τ, ffnet)))
-      @printf("\teigmaxZ: %.5f \t\tlipconst: %f (%s)\n", eigmaxZ, lipconst, soln.termination_status)
+      @printf("\teigmaxZ: %.5f \t\tlipconst: %.5e (%s)\n", eigmaxZ, lipconst, soln.termination_status)
       push!(others, eigmaxZ)
 
     else
@@ -138,14 +138,14 @@ function runNNetAvgLip(nnet_filepath; saveto_dir = joinpath(homedir(), "dump"))
   simple_opts = AvgLipOptions(use_full=false, verbose=true)
   simple_soln = solveLipschitz(ffnet, simple_opts)
   simple_lipconst = sqrt(simple_soln.objective_value)
-  @printf("avglip simple lipconst: %.4f\n", simple_lipconst)
+  @printf("avglip simple lipconst: %.4e\n", simple_lipconst)
 
   # Avglip full next
   full_opts = AvgLipOptions(use_full=true, verbose=true)
   full_soln = solveLipschitz(ffnet, full_opts)
   full_lipconst = sqrt(full_soln.objective_value)
   full_total_time = full_soln.total_time
-  @printf("avglip full lpconst: %.4f \t total_time: %.3f\n", full_lipconst, full_total_time)
+  @printf("avglip full lpconst: %.4e \t total_time: %.3f\n", full_lipconst, full_total_time)
 
   df = DataFrame(
     simple_lipconst = [simple_lipconst],

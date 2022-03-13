@@ -53,8 +53,8 @@ function runAvgLip(ffnet::NeuralNetwork, opts::AvgLipOptions)
   αs = [0.5 for k in 1:ffnet.K]
   m = ffnet.K
 
-  # The ||WK * ... * W1|| term
-  tmp = opnorm(prod(reverse(Ws)))
+  # The β_{m, ∅} * ||WK * ... * W1|| term
+  tmp = βjmk(αs, VecInt([]), m) * opnorm(prod(reverse(Ws)))
   
   # The outer sum
   for k in 1:m-1

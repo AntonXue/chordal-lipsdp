@@ -520,7 +520,7 @@ function runQuery(inst::QueryInstance, opts::AdmmSdpOptions)
   total_time = time() - start_time
 
   if opts.verbose
-    @printf("\tsetup time: %.3f \tsolve time: %.3f \ttotal time: %.3f \tvalue: %.3f (%s)\n",
+    @printf("\tsetup time: %.3f \tsolve time: %.3f \ttotal time: %.3f \tvalue: %.3e (%s)\n",
             setup_time, summary.total_step_time, total_time,
             final_params.γ[end], string(summary.termination_status))
   end
