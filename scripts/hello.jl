@@ -40,16 +40,19 @@ ACAS_SAVETO_DIR = joinpath(DUMP_DIR, "acas"); isdir(ACAS_SAVETO_DIR) || mkdir(AC
 
 # Some batches of random networks
 rand_nnet_filepath(w, d) = "$(RAND_NNET_DIR)/rand-I2-O2-W$(w)-D$(d).nnet"
-RAND_W10_BATCH = [(rand_nnet_filepath(10, d), 0:15, 2.0) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
+RAND_W10_BATCH = [(rand_nnet_filepath(10, d), 0:15, 3.0) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
 RAND_W20_BATCH = [(rand_nnet_filepath(20, d), 0:15, 2.0) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
 RAND_W30_BATCH = [(rand_nnet_filepath(30, d), 0:15, 1.8) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
 RAND_W40_BATCH = [(rand_nnet_filepath(40, d), 0:9,  1.7) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
 RAND_W50_BATCH = [(rand_nnet_filepath(50, d), 0:6,  1.6) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
+ALL_RAND_BATCH = [RAND_W10_BATCH; RAND_W20_BATCH; RAND_W30_BATCH; RAND_W40_BATCH; RAND_W50_BATCH]
+
+
 SMALL_RAND_BATCH = [(rand_nnet_filepath(10, d), 0:3, 2.0) for d in [5; 10; 15]]
 
 # The ACAS networks
 ACAS_FILES = readdir(ACAS_NNET_DIR, join=true)
-ALL_ACAS_BATCH = [(f, 0:9, 2.0) for f in ACAS_FILES]
+ALL_ACAS_BATCH = [(f, 0:9, 4.0) for f in ACAS_FILES]
 ACAS1_BATCH = filter(b -> (match(r".*run2a_1.*nnet", b[1]) isa RegexMatch), ALL_ACAS_BATCH)
 ACAS2_BATCH = filter(b -> (match(r".*run2a_2.*nnet", b[1]) isa RegexMatch), ALL_ACAS_BATCH)
 ACAS3_BATCH = filter(b -> (match(r".*run2a_3.*nnet", b[1]) isa RegexMatch), ALL_ACAS_BATCH)
@@ -96,8 +99,19 @@ end
 
 @printf("repl start time: %.3f\n", time() - hello_start_time)
 
-ffnet = loadNeuralNetwork(args["nnet"])
-unscaled_ffnet = loadNeuralNetwork(args["nnet"])
-scaled_ffnet, weight_scales = loadNeuralNetwork(args["nnet"], 2.0)
+if !(args["nnet"] isa Nothing)
+  ffnet = loadNeuralNetwork(args["nnet"])
+  unscaled_ffnet = loadNeuralNetwork(args["nnet"])
+  scaled_ffnet, weight_scales = loadNeuralNetwork(args["nnet"], 2.0)
+end
+
+
+run_rand_lipsdp() = runRandBatch(ALL_RAND_BATCH, :lipsdp)
+run_rand_chordal() = runRandBatch(ALL_RAND_BATCH, :chordalsdp)
+
+run_acas_lipsdp() = runAcasBatch(ALL_ACAS_BATCH, :lipsdp)
+run_acas_chordalsdp() = runAcasBatch(ALL_ACAS_BATCH, :chordalsdp)
+run_acas_avglip() = runAcasBatch(ALL_ACAS_BATCH, :avglip)
+
 
 

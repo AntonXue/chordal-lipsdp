@@ -72,7 +72,6 @@ function runNNet(nnet_filepath, method;
       @printf("\teigmaxZ: %.5f \t\tlipconst: %f (%s)\n", eigmaxZ, lipconst, soln.termination_status)
       push!(others, eigmaxZ)
 
-
     else
       error("\tunrecognized method $(method)")
     end
