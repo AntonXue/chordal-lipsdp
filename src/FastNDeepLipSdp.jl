@@ -12,7 +12,7 @@ Reexport.@reexport using .Stuff
 Reexport.@reexport using .Utils
 
 # Solve a problem instance depending on what kind of options we give it
-function solveLip(ffnet :: NeuralNetwork, opts :: SdpOptions; verbose = false)
+function solveLip(ffnet::NeuralNetwork, opts::SdpOptions; verbose = false)
   inst = QueryInstance(ffnet=ffnet)
   soln = runQuery(inst, opts) # Multiple dispatch based on opts type
   return soln

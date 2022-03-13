@@ -1,6 +1,6 @@
 
 # Generate trajectories from a unit box
-function randomTrajectories(N :: Int, ffnet :: NeuralNetwork, x1min :: VecF64, x1max :: VecF64)
+function randomTrajectories(N::Int, ffnet::NeuralNetwork, x1min::VecF64, x1max::VecF64)
   @assert length(x1min) == length(x1max) == ffnet.xdims[1]
   xgaps = x1max - x1min
   box01_points = rand(ffnet.xdims[1], N)
@@ -10,7 +10,7 @@ function randomTrajectories(N :: Int, ffnet :: NeuralNetwork, x1min :: VecF64, x
 end
 
 # Plot some data to a file
-function plotRandomTrajectories(N :: Int, ffnet :: NeuralNetwork;
+function plotRandomTrajectories(N::Int, ffnet::NeuralNetwork;
                                 x1min = -ones(ffnet.xdims[1]),
                                 x1max = ones(ffnet.xdims[1]),
                                 saveto = "~/Desktop/hello.png")
@@ -25,7 +25,7 @@ end
 
 # Plot different line data
 # Get data of form (label1, ys1), (label2, ys2), ...
-function plotLines(xs, labeled_lines :: Vector{Tuple{String, VecF64}};
+function plotLines(xs, labeled_lines::Vector{Tuple{String, VecF64}};
                    title = "title", ylogscale = false, saveto = "~/Desktop/foo.png")
   # Make sure we have a consistent number of data
   @assert all(lys -> length(xs) == length(lys[2]), labeled_lines)

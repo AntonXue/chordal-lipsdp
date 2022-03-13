@@ -11,15 +11,15 @@ LIPSDP_DEFAULT_MOSEK_OPTS =
 
 # Options
 @with_kw struct LipSdpOptions <: SdpOptions
-  τ :: Int = 0; @assert τ >= 0
-  include_default_mosek_opts :: Bool = true
-  mosek_opts :: Dict{String, Any} = Dict()
-  use_dual :: Bool = true
-  verbose :: Bool = false
+  τ::Int = 0; @assert τ >= 0
+  include_default_mosek_opts::Bool = true
+  mosek_opts::Dict{String, Any} = Dict()
+  use_dual::Bool = true
+  verbose::Bool = false
 end
 
 # Set up the model for the solver call
-function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
+function setup!(model, inst::QueryInstance, opts::LipSdpOptions)
   setup_start_time = time()
   vars = Dict()
 
@@ -40,7 +40,7 @@ function setup!(model, inst :: QueryInstance, opts :: LipSdpOptions)
 end
 
 # Run the query and return the solution summary
-function solve!(model, vars, opts :: LipSdpOptions)
+function solve!(model, vars, opts::LipSdpOptions)
   optimize!(model)
   summary = solution_summary(model)
   values = Dict()
@@ -49,7 +49,7 @@ function solve!(model, vars, opts :: LipSdpOptions)
 end
 
 # The interface to call
-function runQuery(inst :: QueryInstance, opts :: LipSdpOptions)
+function runQuery(inst::QueryInstance, opts::LipSdpOptions)
   total_start_time = time()
 
   # Set up model and add solver options, with the defaults first

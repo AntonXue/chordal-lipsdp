@@ -5,6 +5,8 @@ using ArgParse
 using Printf
 using Parameters
 using MosekTools
+using Dates
+
 include("../src/Evals.jl"); using .Evals
 @printf("import loading time: %.3f\n", time() - hello_start_time)
 
@@ -38,10 +40,10 @@ DUMP_DIR = args["dumpdir"]; @assert isdir(DUMP_DIR)
 # Some batches of random networks
 rand_nnet_filepath(w, d) = "$(RAND_NNET_DIR)/rand-I2-O2-W$(w)-D$(d).nnet"
 RAND_W10_BATCH = [(10, d, rand_nnet_filepath(10, d)) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
-RAND_W20_BATCH = [(20, d, rand_nnet_filepath(20, d)) for d in [5; 10; 15; 20; 25; 30; 35; 40;]]
-RAND_W30_BATCH = [(30, d, rand_nnet_filepath(30, d)) for d in [5; 10; 15; 20; 25; 30;]]
-RAND_W40_BATCH = [(40, d, rand_nnet_filepath(40, d)) for d in [5; 10; 15; 20; 25]]
-RAND_W50_BATCH = [(50, d, rand_nnet_filepath(50, d)) for d in [5; 10; 15; 20;]]
+RAND_W20_BATCH = [(20, d, rand_nnet_filepath(20, d)) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
+RAND_W30_BATCH = [(30, d, rand_nnet_filepath(30, d)) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
+RAND_W40_BATCH = [(40, d, rand_nnet_filepath(40, d)) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
+RAND_W50_BATCH = [(50, d, rand_nnet_filepath(50, d)) for d in [5; 10; 15; 20; 25; 30; 35; 40; 45; 50]]
 SMALL_RAND_BATCH = [(10, d, rand_nnet_filepath(10, d)) for d in [5; 10; 15]]
 
 # The ACAS networks
@@ -57,7 +59,8 @@ SMALL_ACAS_BATCH = ACAS_FILES[1:2]
 function runRandBatch(rand_batch;
                       τs = 0:9,
                       lipsdp_mosek_opts = EVALS_MOSEK_OPTS,
-                      chordalsdp_mosek_opts = EVALS_MOSEK_OPTS)
+                      chordalsdp_mosek_opts = EVALS_MOSEK_OPTS,
+                      target_opnorm = nothing)
   batch_size = length(rand_batch)
   results = Vector{Any}()
   for (i, (w, d, nnet_filepath)) in enumerate(rand_batch)
@@ -69,6 +72,7 @@ function runRandBatch(rand_batch;
       τs = τs, # There is an opportunity to smartly scale
       lipsdp_mosek_opts = lipsdp_mosek_opts,
       chordalsdp_mosek_opts = chordalsdp_mosek_opts,
+      target_opnorm = target_opnorm,
       saveto_dir = rand_saveto_dir)
     push!(results, res)
     @printf("----------- iter done in time: %.3f\n", time() - iter_start_time)

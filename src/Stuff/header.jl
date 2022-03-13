@@ -17,18 +17,18 @@ struct TanhActivation <: Activation end
 # Generic neural network supertype
 @with_kw struct NeuralNetwork
   # The type of the network
-  activ :: Activation
+  activ::Activation
 
   # The state vector dimension at start of each layer
-  xdims :: VecInt
+  xdims::VecInt
 
   # The dimensions for the Z (edims) and T (fdims)
-  edims :: VecInt = xdims[1:end-1]
-  fdims :: VecInt = edims[2:end]
+  edims::VecInt = xdims[1:end-1]
+  fdims::VecInt = edims[2:end]
 
   # Each M[K] == [Wk bk]
-  Ms :: Vector{MatF64}
-  K :: Int = length(Ms)
+  Ms::Vector{MatF64}
+  K::Int = length(Ms)
 
   # Assert a non-trivial structural integrity of the network
   @assert length(xdims) >= 2
@@ -38,7 +38,7 @@ end
 
 # Query instance
 @with_kw struct QueryInstance
-  ffnet :: NeuralNetwork
+  ffnet::NeuralNetwork
 end
 
 # The type of options
@@ -46,12 +46,12 @@ abstract type SdpOptions end
 
 # The solution that is to be output by an algorithm
 @with_kw struct QuerySolution{A, B, C, D}
-  objective_value :: A
-  values :: B
-  summary :: C
-  termination_status :: D
-  total_time :: Float64
-  setup_time :: Float64
-  solve_time :: Float64
+  objective_value::A
+  values::B
+  summary::C
+  termination_status::D
+  total_time::Float64
+  setup_time::Float64
+  solve_time::Float64
 end
 

@@ -11,15 +11,15 @@ CHORDALSDP_DEFAULT_MOSEK_OPTS =
 
 # How the construction is done
 @with_kw struct ChordalSdpOptions <: SdpOptions
-  τ :: Int = 0; @assert τ >= 0
-  include_default_mosek_opts :: Bool = true
-  mosek_opts :: Dict{String, Any} = Dict()
-  use_dual :: Bool = false
-  verbose :: Bool = false
+  τ::Int = 0; @assert τ >= 0
+  include_default_mosek_opts::Bool = true
+  mosek_opts::Dict{String, Any} = Dict()
+  use_dual::Bool = false
+  verbose::Bool = false
 end
 
 # Set up the model for the solver call
-function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
+function setup!(model, inst::QueryInstance, opts::ChordalSdpOptions)
   setup_start_time = time()
   vars = Dict()
 
@@ -55,7 +55,7 @@ function setup!(model, inst :: QueryInstance, opts :: ChordalSdpOptions)
 end
 
 # Run the query and return the solution summary
-function solve!(model, vars, opts :: ChordalSdpOptions)
+function solve!(model, vars, opts::ChordalSdpOptions)
   optimize!(model)
   summary = solution_summary(model)
   values = Dict()
@@ -64,7 +64,7 @@ function solve!(model, vars, opts :: ChordalSdpOptions)
 end
 
 # The interface to call
-function runQuery(inst :: QueryInstance, opts :: ChordalSdpOptions)
+function runQuery(inst::QueryInstance, opts::ChordalSdpOptions)
   total_start_time = time()
 
   # Set up model and add solver options, with the defaults first

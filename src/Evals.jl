@@ -7,6 +7,7 @@ using Random
 using Parameters
 using DataFrames
 using CSV
+using Dates
 
 include("FastNDeepLipSdp.jl")
 import Reexport
@@ -16,10 +17,10 @@ Reexport.@reexport using .FastNDeepLipSdp
 EVALS_MOSEK_OPTS =
   Dict("QUIET" => true,
        # "MSK_IPAR_INTPNT_SCALING" => 3,
-       "MSK_DPAR_OPTIMIZER_MAX_TIME" => 600.0,
-       "INTPNT_CO_TOL_REL_GAP" => 1e-9,
-       "INTPNT_CO_TOL_PFEAS" => 1e-9,
-       "INTPNT_CO_TOL_DFEAS" => 1e-9)
+       "MSK_DPAR_OPTIMIZER_MAX_TIME" => 60.0 * 60 * 2,
+       "INTPNT_CO_TOL_REL_GAP" => 1e-6,
+       "INTPNT_CO_TOL_PFEAS" => 1e-6,
+       "INTPNT_CO_TOL_DFEAS" => 1e-6)
 
 # Call the stuff
 function warmup(; verbose=false)
@@ -36,23 +37,23 @@ end
 
 # Results from a runNNet function call
 @with_kw struct RunNNetResult
-  nnet_filepath :: String
-  τs :: VecInt
+  nnet_filepath::String
+  τs::VecInt
 
-  lipsdp_solve_times :: VecF64
-  lipsdp_total_times :: VecF64
-  lipsdp_vals :: VecF64
-  lipsdp_eigmaxs :: VecF64
-  lipsdp_term_statuses :: Vector{String}
+  lipsdp_solve_times::VecF64
+  lipsdp_total_times::VecF64
+  lipsdp_vals::VecF64
+  lipsdp_eigmaxs::VecF64
+  lipsdp_term_statuses::Vector{String}
 
-  chordal_solve_times :: VecF64
-  chordal_total_times :: VecF64
-  chordal_vals :: VecF64
-  chordal_eigmaxs :: VecF64
-  chordal_term_statuses :: Vector{String}
+  chordal_solve_times::VecF64
+  chordal_total_times::VecF64
+  chordal_vals::VecF64
+  chordal_eigmaxs::VecF64
+  chordal_term_statuses::Vector{String}
 end
 
-function saveRunNNetResult(res :: RunNNetResult, saveto)
+function saveRunNNetResult(res::RunNNetResult, saveto)
   # Construct the DataFrame
   df = DataFrame(
     taus = res.τs,
@@ -77,7 +78,7 @@ function runNNet(nnet_filepath;
                  chordalsdp_mosek_opts = EVALS_MOSEK_OPTS,
                  saveto_dir = joinpath(homedir(), "dump"),
                  target_opnorm = 2.0,
-                 do_plots = true,
+                 do_plots = false,
                  profile_stuff = false) # TODO: implement profiling
 
   # The τ values are meaningful
@@ -107,33 +108,39 @@ function runNNet(nnet_filepath;
   for (i, τ) in enumerate(τs)
     println("tick for τ[$(i)/$(length(τs))] = $(τ) of $(nnet_filename)")
 
-    # LipSdp stuff
-    lipsdp_opts = LipSdpOptions(τ=τ, mosek_opts=lipsdp_mosek_opts, verbose=true)
-    lipsdp_soln = solveLip(ffnet, lipsdp_opts)
-    lipsdp_lipconst = sqrt(lipsdp_soln.objective_value) / prod(weight_scales)
-    lipsdp_Z = makeZ(lipsdp_soln.values[:γ], τ, ffnet)
-    eigmax_lipsdp_Z = eigmax(Symmetric(lipsdp_Z))
-    println("\teigmax: $(eigmax_lipsdp_Z) \tlipconst: $(lipsdp_lipconst)")
-
-    push!(lipsdp_solve_times, lipsdp_soln.solve_time)
-    push!(lipsdp_total_times, lipsdp_soln.total_time)
-    push!(lipsdp_vals, lipsdp_lipconst)
-    push!(lipsdp_eigmaxs, eigmax_lipsdp_Z)
-    push!(lipsdp_term_statuses, lipsdp_soln.termination_status)
-
     # Chordal stuff
+    println("now: $(now()) (running chordal!)")
+
     chordal_opts = ChordalSdpOptions(τ=τ, mosek_opts=chordalsdp_mosek_opts, verbose=true)
     chordal_soln = solveLip(ffnet, chordal_opts)
     chordal_lipconst = sqrt(chordal_soln.objective_value) / prod(weight_scales)
     chordal_Z = makeZ(chordal_soln.values[:γ], τ, ffnet)
     eigmax_chordal_Z = eigmax(Symmetric(chordal_Z))
-    println("\teigmax: $(eigmax_chordal_Z) \tlipconst: $(chordal_lipconst)")
+    println("\tchordal eigmax: $(eigmax_chordal_Z) \tlipconst: $(chordal_lipconst)")
 
     push!(chordal_solve_times, chordal_soln.solve_time)
     push!(chordal_total_times, chordal_soln.total_time)
     push!(chordal_vals, chordal_lipconst)
     push!(chordal_eigmaxs, eigmax_chordal_Z)
     push!(chordal_term_statuses, chordal_soln.termination_status)
+
+
+    #=
+    # LipSdp stuff
+    println("now: $(now()) (running lipsdp!)")
+    lipsdp_opts = LipSdpOptions(τ=τ, mosek_opts=lipsdp_mosek_opts, verbose=true)
+    lipsdp_soln = solveLip(ffnet, lipsdp_opts)
+    lipsdp_lipconst = sqrt(lipsdp_soln.objective_value) / prod(weight_scales)
+    lipsdp_Z = makeZ(lipsdp_soln.values[:γ], τ, ffnet)
+    eigmax_lipsdp_Z = eigmax(Symmetric(lipsdp_Z))
+    println("\tlipsdp eigmax: $(eigmax_lipsdp_Z) \tlipconst: $(lipsdp_lipconst)")
+
+    push!(lipsdp_solve_times, lipsdp_soln.solve_time)
+    push!(lipsdp_total_times, lipsdp_soln.total_time)
+    push!(lipsdp_vals, lipsdp_lipconst)
+    push!(lipsdp_eigmaxs, eigmax_lipsdp_Z)
+    push!(lipsdp_term_statuses, lipsdp_soln.termination_status)
+    =#
 
     println("--")
   end
@@ -169,8 +176,8 @@ function runNNet(nnet_filepath;
     chordal_term_statuses = chordal_term_statuses)
 
   # Save the CSV
-  csv_saveto = joinpath(saveto_dir, "$(nnet_filename)_runs.csv")
-  saveRunNNetResult(res, csv_saveto)
+  # csv_saveto = joinpath(saveto_dir, "$(nnet_filename)_runs.csv")
+  # saveRunNNetResult(res, csv_saveto)
   return res
 end
 
