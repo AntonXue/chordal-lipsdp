@@ -3,6 +3,7 @@
 module Utils
 
 using LinearAlgebra
+using Combinatorics
 using Random
 using Plots
 pyplot()
@@ -13,9 +14,9 @@ include("network_utils.jl");
 include("plotting.jl");
 
 #
-export randomNetwork, runNetwork
-export scaleMats, loadNeuralNetwork
-export randomTrajectories
+export runNetwork, randomizedLipschitz
+export loadNeuralNetwork
+export randomNetwork, randomTrajectories
 export plotRandomTrajectories, plotLines
 
 end # End module

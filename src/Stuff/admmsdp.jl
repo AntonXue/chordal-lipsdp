@@ -6,7 +6,7 @@ using MosekTools
 using Printf
 
 # Options for ADMM
-@with_kw struct AdmmSdpOptions
+@with_kw struct AdmmSdpOptions <: MethodOptions
   τ::Int = 0
   max_steps::Int = 10000
 

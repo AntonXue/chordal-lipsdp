@@ -42,7 +42,7 @@ end
 end
 
 # The type of options
-abstract type SdpOptions end
+abstract type MethodOptions end
 
 # The solution that is to be output by an algorithm
 @with_kw struct QuerySolution{A, B, C, D}

@@ -10,7 +10,7 @@ CHORDALSDP_DEFAULT_MOSEK_OPTS =
   Dict("QUIET" => true)
 
 # How the construction is done
-@with_kw struct ChordalSdpOptions <: SdpOptions
+@with_kw struct ChordalSdpOptions <: MethodOptions
   τ::Int = 0; @assert τ >= 0
   include_default_mosek_opts::Bool = true
   mosek_opts::Dict{String, Any} = Dict()

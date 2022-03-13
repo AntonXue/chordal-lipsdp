@@ -11,4 +11,5 @@ Pkg.add("PyPlot")
 Pkg.add("MosekTools")
 Pkg.add("DataFrames")
 Pkg.add("CSV")
+Pkg.add("Combinatorics")
 

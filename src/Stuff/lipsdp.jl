@@ -10,7 +10,7 @@ LIPSDP_DEFAULT_MOSEK_OPTS =
   Dict("QUIET" => true)
 
 # Options
-@with_kw struct LipSdpOptions <: SdpOptions
+@with_kw struct LipSdpOptions <: MethodOptions
   τ::Int = 0; @assert τ >= 0
   include_default_mosek_opts::Bool = true
   mosek_opts::Dict{String, Any} = Dict()
