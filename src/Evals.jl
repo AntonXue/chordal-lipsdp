@@ -24,21 +24,15 @@ EVALS_MOSEK_OPTS =
 
 # Result from running a nnet
 @with_kw struct RunNNetResult
-  ffnet::NeuralNetwork
-  weight_scales::VecF64
+  nnet_filepath::String
+  τnorm_pairs::Vector{Tuple{Int, Float64}}
   solns::Vector{Any}
   lipconsts::VecF64
   others::Any
 end
 
-# A generic runnet function
-function runNNet(nnet_filepath, method;
-                 τs = 0:9,
-                 Wk_opnorm = nothing,
-                 mosek_opts = EVALS_MOSEK_OPTS)
-  # The τ values are meaningful
-  @assert sort(τs) == τs && minimum(τs) >= 0
-
+# Run a single τ, Wk_opnorm pair
+function runNNetOne(nnet_filepath, τ, Wk_opnorm, method; mosek_opts = EVALS_MOSEK_OPTS)
   # Load the stuff and do things
   if Wk_opnorm isa Nothing
     ffnet = loadNeuralNetwork(nnet_filepath)
@@ -47,57 +41,58 @@ function runNNet(nnet_filepath, method;
     ffnet, weight_scales = loadNeuralNetwork(nnet_filepath, Wk_opnorm)
   end
 
-  nnet_filename = basename(nnet_filepath)
+  # Run different methods depending on what is specified
+  if method == :lipsdp
+    opts = LipSdpOptions(τ=τ, mosek_opts=mosek_opts, verbose=true)
+  elseif method == :chordalsdp
+    opts = ChordalSdpOptions(τ=τ, mosek_opts=mosek_opts, verbose=true)
+  else
+    error("\tunrecognized method $(method)")
+  end
+
+  soln = solveLipschitz(ffnet, opts)
+  return ffnet, weight_scales, soln
+end
+
+# A generic runnet function
+function runNNet(nnet_filepath, τnorm_pairs, method; mosek_opts = EVALS_MOSEK_OPTS)
+  # One of the two accepted for this one
+  @assert method == :lipsdp || method == :chordalsdp
+
   solns = Vector{Any}()
   lipconsts = VecF64()
   others = Vector{Any}()
-  for (i, τ) in enumerate(τs)
-    println("tick for τ[$(i)/$(length(τs))] = $(τ) of $(nnet_filename)")
+  for (i, (τ, Wk_opnorm)) in enumerate(τnorm_pairs)
+    println("tick for τ[$(i)/$(length(τnorm_pairs))] = $(τ) of $(basename(nnet_filepath))")
     println("now: $(now()) (running $(method))")
 
-    # Run different methods depending on what is specified
-    if method == :lipsdp
-      opts = LipSdpOptions(τ=τ, mosek_opts=mosek_opts, verbose=true)
-      soln = solveLipschitz(ffnet, opts)
-      lipconst = sqrt(soln.values[:γ][end]) / prod(weight_scales)
-      eigmaxZ = eigmax(Symmetric(makeZ(soln.values[:γ], τ, ffnet)))
-      @printf("\teigmaxZ: %.5f \t\tlipconst: %.5e (%s)\n", eigmaxZ, lipconst, soln.termination_status)
-      push!(others, eigmaxZ)
-
-    elseif method == :chordalsdp
-      opts = ChordalSdpOptions(τ=τ, mosek_opts=mosek_opts, verbose=true)
-      soln = solveLipschitz(ffnet, opts)
-      lipconst = sqrt(soln.values[:γ][end]) / prod(weight_scales)
-      eigmaxZ = eigmax(Symmetric(makeZ(soln.values[:γ], τ, ffnet)))
-      @printf("\teigmaxZ: %.5f \t\tlipconst: %.5e (%s)\n", eigmaxZ, lipconst, soln.termination_status)
-      push!(others, eigmaxZ)
-
-    else
-      error("\tunrecognized method $(method)")
-    end
+    ffnet, weight_scales, soln = runNNetOne(nnet_filepath, τ, Wk_opnorm, method)
+    lipconst = sqrt(soln.values[:γ][end]) / prod(weight_scales)
+    eigmaxZ = eigmax(Symmetric(makeZ(soln.values[:γ], τ, ffnet)))
+    @printf("\teigmaxZ: %.5f \t\tlipconst: %.5e (%s)\n", eigmaxZ, lipconst, soln.termination_status)
 
     push!(solns, soln)
     push!(lipconsts, lipconst)
+    push!(others, eigmaxZ)
   end
 
   # Return the stuff
   return RunNNetResult(
-    ffnet = ffnet,
-    weight_scales = weight_scales,
+    nnet_filepath = nnet_filepath,
+    τnorm_pairs = τnorm_pairs,
     solns = solns,
     lipconsts = lipconsts,
     others = others)
 end
 
 # Run the lipsdp stuff
-function runNNetLipSdp(nnet_filepath;
-                       τs = 0:9,
-                       Wk_opnorm = nothing,
+function runNNetLipSdp(nnet_filepath, τnorm_pairs;
                        mosek_opts = EVALS_MOSEK_OPTS,
                        saveto_dir = joinpath(homedir(), "dump"))
-  res = runNNet(nnet_filepath, :lipsdp, τs=τs, Wk_opnorm=Wk_opnorm, mosek_opts=mosek_opts)
+  res = runNNet(nnet_filepath, τnorm_pairs, :lipsdp, mosek_opts=mosek_opts)
   df = DataFrame(
-    τs=τs,
+    τ = [τ for (τ, ) in τnorm_pairs],
+    Wknorm = [n for (_,n) in τnorm_pairs],
     lipsdp_solve_secs = [s.solve_time for s in res.solns],
     lipsdp_total_secs = [s.total_time for s in res.solns],
     lipsdp_lipconst = res.lipconsts,
@@ -110,14 +105,13 @@ function runNNetLipSdp(nnet_filepath;
 end
 
 # Run the chordal stuff
-function runNNetChordalSdp(nnet_filepath;
-                           τs = 0:9,
-                           Wk_opnorm = nothing,
+function runNNetChordalSdp(nnet_filepath, τnorm_pairs;
                            mosek_opts = EVALS_MOSEK_OPTS,
                            saveto_dir = joinpath(homedir(), "dump"))
-  res = runNNet(nnet_filepath, :chordalsdp, τs=τs, Wk_opnorm=Wk_opnorm, mosek_opts=mosek_opts)
+  res = runNNet(nnet_filepath, τnorm_pairs, :chordalsdp, mosek_opts=mosek_opts)
   df = DataFrame(
-    τs=τs,
+    τ = [τ for (τ, ) in τnorm_pairs],
+    Wknorm = [n for (_,n) in τnorm_pairs],
     chordalsdp_solve_secs = [s.solve_time for s in res.solns],
     chordalsdp_total_secs = [s.total_time for s in res.solns],
     chordalsdp_lipconst = res.lipconsts,
