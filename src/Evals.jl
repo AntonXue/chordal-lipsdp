@@ -91,7 +91,7 @@ function runNNetLipSdp(nnet_filepath, τnorm_pairs;
                        saveto_dir = joinpath(homedir(), "dump"))
   res = runNNet(nnet_filepath, τnorm_pairs, :lipsdp, mosek_opts=mosek_opts)
   df = DataFrame(
-    τ = [τ for (τ, ) in τnorm_pairs],
+    tau = [τ for (τ, ) in τnorm_pairs],
     Wknorm = [n for (_,n) in τnorm_pairs],
     lipsdp_solve_secs = [s.solve_time for s in res.solns],
     lipsdp_total_secs = [s.total_time for s in res.solns],
@@ -110,7 +110,7 @@ function runNNetChordalSdp(nnet_filepath, τnorm_pairs;
                            saveto_dir = joinpath(homedir(), "dump"))
   res = runNNet(nnet_filepath, τnorm_pairs, :chordalsdp, mosek_opts=mosek_opts)
   df = DataFrame(
-    τ = [τ for (τ, ) in τnorm_pairs],
+    tau = [τ for (τ, ) in τnorm_pairs],
     Wknorm = [n for (_,n) in τnorm_pairs],
     chordalsdp_solve_secs = [s.solve_time for s in res.solns],
     chordalsdp_total_secs = [s.total_time for s in res.solns],
