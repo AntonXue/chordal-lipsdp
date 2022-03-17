@@ -128,21 +128,23 @@ function runNNetAvgLip(nnet_filepath; saveto_dir = joinpath(homedir(), "dump"))
   # Load the stuff and do things
   ffnet = loadNeuralNetwork(nnet_filepath)
 
-  # Avglip simple first
-  simple_opts = AvgLipOptions(use_full=false, verbose=true)
-  simple_soln = solveLipschitz(ffnet, simple_opts)
-  simple_lipconst = sqrt(simple_soln.objective_value)
-  @printf("avglip simple lipconst: %.4e\n", simple_lipconst)
+  # Avglip naive first
+  naive_opts = AvgLipOptions(use_full=false, verbose=true)
+  naive_soln = solveLipschitz(ffnet, naive_opts)
+  naive_lipconst = naive_soln.objective_value
+  naive_total_time = naive_soln.total_time
+  @printf("avglip naive lipconst: %.4e \t total time: %.3f\n", naive_lipconst, naive_total_time)
 
   # Avglip full next
   full_opts = AvgLipOptions(use_full=true, verbose=true)
   full_soln = solveLipschitz(ffnet, full_opts)
-  full_lipconst = sqrt(full_soln.objective_value)
+  full_lipconst = full_soln.objective_value
   full_total_time = full_soln.total_time
-  @printf("avglip full lpconst: %.4e \t total_time: %.3f\n", full_lipconst, full_total_time)
+  @printf("avglip full lpconst: %.4e \t total time: %.3f\n", full_lipconst, full_total_time)
 
   df = DataFrame(
-    simple_lipconst = [simple_lipconst],
+    naive_lipconst = [naive_lipconst],
+    naive_total_secs = [naive_total_time],
     full_lipconst = [full_lipconst],
     full_total_secs = [full_total_time])
   nnet_filename = basename(nnet_filepath)
@@ -160,13 +162,13 @@ function warmup(; verbose=false)
   lipsdp_soln = solveLipschitz(ffnet, LipSdpOptions(τ=10, mosek_opts=EVALS_MOSEK_OPTS))
   chordal_soln = solveLipschitz(ffnet, ChordalSdpOptions(τ=10, mosek_opts=EVALS_MOSEK_OPTS))
   full_soln = solveLipschitz(ffnet, AvgLipOptions())
-  simple_soln = solveLipschitz(ffnet, AvgLipOptions(use_full=false))
+  naive_soln = solveLipschitz(ffnet, AvgLipOptions(use_full=false))
   rand_lipconst = randomizedLipschitz(ffnet)
   if verbose
     println("lipsdp val: $(sqrt(lipsdp_soln.values[:γ][end]))")
     println("chordal val: $(sqrt(chordal_soln.values[:γ][end]))")
     println("avglip full: $(full_soln.objective_value)")
-    println("avglip simple: $(simple_soln.objective_value)")
+    println("avglip naive: $(naive_soln.objective_value)")
     println("randomized: $(rand_lipconst)")
   end
   if verbose; @printf("warmup time: %.3f\n", time() - warmup_start_time) end

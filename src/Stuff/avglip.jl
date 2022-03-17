@@ -45,7 +45,7 @@ end
 function runAvgLip(ffnet::NeuralNetwork, opts::AvgLipOptions)
   Ws = [M[:, 1:end-1] for M in ffnet.Ms]
 
-  # If we don't do the full sum, just do the simple one and return
+  # If we don't do the full sum, just do the naive one and return
   if !opts.use_full; return prod(opnorm(Wk) for Wk in Ws) end
   # Otherwise continue
 
