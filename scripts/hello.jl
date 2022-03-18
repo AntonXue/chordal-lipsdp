@@ -42,39 +42,53 @@ ACAS_SAVETO_DIR = joinpath(DUMP_DIR, "acas"); isdir(ACAS_SAVETO_DIR) || mkdir(AC
 rand_nnet_filepath(w, d) = "$(RAND_NNET_DIR)/rand-I2-O2-W$(w)-D$(d).nnet"
 dwτ2norm(d, w, τ) = (1 - (d/50)) * 2.0 + (d/50) * 1.6
 
-RAND_W10 = [(rand_nnet_filepath(10, d), [(τ, dwτ2norm(d, 10, τ)) for τ in 0:15]) for d in 5:5:50]
-RAND_W20 = [(rand_nnet_filepath(20, d), [(τ, dwτ2norm(d, 20, τ)) for τ in 0:15]) for d in 5:5:50]
-RAND_W30 = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 5:5:50]
+# The versions for ChordalSDP
+RAND_W10 = [(rand_nnet_filepath(10, d), [(τ, dwτ2norm(d, 10, τ)) for τ in 0:15]) for d in 5:5:50]   # Done
+RAND_W20 = [(rand_nnet_filepath(20, d), [(τ, dwτ2norm(d, 20, τ)) for τ in 0:15]) for d in 5:5:50]   # Done
+RAND_W30 = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 5:5:50]   # Done
 
-RAND_W40_A = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:15]) for d in 5:5:10]
-RAND_W40_B = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:11]) for d in 15:5:20]
-RAND_W40_C = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:09]) for d in 25:5:30]
-RAND_W40_D = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:07]) for d in 35:5:40]
-RAND_W40_E = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:06]) for d in 45:5:50]
-RAND_W40 = [RAND_W40_A; RAND_W40_B; RAND_W40_C; RAND_W40_D; RAND_W40_E]
+RAND_W40_A = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:15]) for d in 5:5:10] # Done
+RAND_W40_B = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:11]) for d in 15:5:20] # Done
+RAND_W40_C = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:09]) for d in 25:5:30] # Done
+RAND_W40_D = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:07]) for d in 35:5:40] # Done
+RAND_W40_E = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:06]) for d in 45:5:50] # Done
+RAND_W40 = [RAND_W40_A; RAND_W40_B; RAND_W40_C; RAND_W40_D; RAND_W40_E] # Done
 
-RAND_W50_A = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:09]) for d in 5:5:10]
-RAND_W50_B = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:07]) for d in 15:5:20]
-RAND_W50_C = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 25:5:30]
-RAND_W50_D = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 35:5:40]
-RAND_W50_E = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 45:5:50]
+RAND_W50_A = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:09]) for d in 5:5:10] # Done
+RAND_W50_B = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:07]) for d in 15:5:20] # Done
+RAND_W50_C = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 25:5:30] # Done
+RAND_W50_D = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 35:5:40] # Done
+RAND_W50_E = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 45:5:50] # Done
 RAND_W50 = [RAND_W50_A; RAND_W50_B; RAND_W50_C; RAND_W50_D; RAND_W50_E]
 
 ALL_RAND = [RAND_W10; RAND_W20; RAND_W30; RAND_W40; RAND_W50]
 
 # Shorter versions with truncated tau values
-RAND_W30_SA = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 5:5:10]
-RAND_W30_SB = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 15:5:20]
-RAND_W30_SC = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 25:5:30]
-RAND_W30_SD = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:12]) for d in 35:5:40]
-RAND_W30_SE = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:09]) for d in 45:5:50]
-RAND_W30_S = [RAND_W30_SA; RAND_W30_SB; RAND_W30_SC; RAND_W30_SD; RAND_W30_SE]
-
+# Shorter versions for LipSDP
+RAND_W30_LA = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 5:5:10]  # Done
+RAND_W30_LB = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 15:5:20] # Done
+RAND_W30_LC = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 25:5:30] # Done
+RAND_W30_LD = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 35:5:40] # Done
+RAND_W30_LE = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:09]) for d in 45:5:50] # TODO: D50
+RAND_W30_L = [RAND_W30_LA; RAND_W30_LB; RAND_W30_LC; RAND_W30_LD; RAND_W30_LE]
 
 #
-RAND_W30_SHORT = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:11]) for d in 5:5:50]
-RAND_W40_SHORT = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:05]) for d in 5:5:50]
-RAND_W50_SHORT = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:03]) for d in 5:5:50]
+RAND_W40_LA = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:15]) for d in 5:5:10]  # Done
+RAND_W40_LB = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:15]) for d in 15:5:20] # Done
+RAND_W40_LC = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:15]) for d in 25:5:30]
+RAND_W40_LD = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:07]) for d in 35:5:40]
+RAND_W40_LE = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:06]) for d in 45:5:50]
+RAND_W40_L = [RAND_W40_LA; RAND_W40_LB; RAND_W40_LC; RAND_W40_LD; RAND_W40_LE]
+
+#
+RAND_W50_LA = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:15]) for d in 5:5:10]  # Done
+RAND_W50_LB = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:15]) for d in 15:5:20] # Done
+RAND_W50_LC = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:09]) for d in 25:5:30]
+RAND_W50_LD = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:07]) for d in 35:5:40]
+RAND_W50_LE = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 45:5:50]
+RAND_W50_L = [RAND_W50_LA; RAND_W50_LB; RAND_W50_LC; RAND_W50_LD; RAND_W50_LE]
+#
+#
 
 SMALL_RAND = [(rand_nnet_filepath(10, d), 0:3, 2.0) for d in [5; 10; 15]]
 
