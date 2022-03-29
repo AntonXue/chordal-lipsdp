@@ -5,7 +5,7 @@ using Combinatorics
 
 # Options
 @with_kw struct AvgLipOptions <: MethodOptions
-  use_full::Bool = true 
+  use_cplip::Bool = true
   verbose::Bool = false
 end
 
@@ -46,7 +46,7 @@ function runAvgLip(ffnet::NeuralNetwork, opts::AvgLipOptions)
   Ws = [M[:, 1:end-1] for M in ffnet.Ms]
 
   # If we don't do the full sum, just do the naive one and return
-  if !opts.use_full; return prod(opnorm(Wk) for Wk in Ws) end
+  if !opts.use_cplip; return prod(opnorm(Wk) for Wk in Ws) end
   # Otherwise continue
 
   # The αs should be more smartly picked depending on ffnet.activ

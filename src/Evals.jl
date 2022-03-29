@@ -16,7 +16,6 @@ Reexport.@reexport using .FastNDeepLipSdp
 # Default options for Mosek
 EVALS_MOSEK_OPTS =
   Dict("QUIET" => true,
-       # "MSK_IPAR_INTPNT_SCALING" => 3,
        "MSK_DPAR_OPTIMIZER_MAX_TIME" => 60.0 * 60 * 2,
        "INTPNT_CO_TOL_REL_GAP" => 1e-6,
        "INTPNT_CO_TOL_PFEAS" => 1e-6,
@@ -97,6 +96,7 @@ function runNNetLipSdp(nnet_filepath, τnorm_pairs;
     lipsdp_total_secs = [s.total_time for s in res.solns],
     lipsdp_lipconst = res.lipconsts,
     lipsdp_eigmaxZ = res.others,
+    lipsdp_obj_vals = [s.objective_value for s in res.solns],
     lipsdp_term_status = [s.termination_status for s in res.solns])
   nnet_filename = basename(nnet_filepath)
   saveto = joinpath(saveto_dir, "$(nnet_filename)_lipsdp.csv")
@@ -116,6 +116,7 @@ function runNNetChordalSdp(nnet_filepath, τnorm_pairs;
     chordalsdp_total_secs = [s.total_time for s in res.solns],
     chordalsdp_lipconst = res.lipconsts,
     chordalsdp_eigmaxZ = res.others,
+    chordalsdp_obj_vals = [s.objective_value for s in res.solns],
     chordalsdp_term_status = [s.termination_status for s in res.solns])
   nnet_filename = basename(nnet_filepath)
   saveto = joinpath(saveto_dir, "$(nnet_filename)_chordalsdp.csv")
@@ -129,24 +130,24 @@ function runNNetAvgLip(nnet_filepath; saveto_dir = joinpath(homedir(), "dump"))
   ffnet = loadNeuralNetwork(nnet_filepath)
 
   # Avglip naive first
-  naive_opts = AvgLipOptions(use_full=false, verbose=true)
+  naive_opts = AvgLipOptions(use_cplip=false, verbose=true)
   naive_soln = solveLipschitz(ffnet, naive_opts)
   naive_lipconst = naive_soln.objective_value
   naive_total_time = naive_soln.total_time
   @printf("avglip naive lipconst: %.4e \t total time: %.3f\n", naive_lipconst, naive_total_time)
 
-  # Avglip full next
-  full_opts = AvgLipOptions(use_full=true, verbose=true)
-  full_soln = solveLipschitz(ffnet, full_opts)
-  full_lipconst = full_soln.objective_value
-  full_total_time = full_soln.total_time
-  @printf("avglip full lpconst: %.4e \t total time: %.3f\n", full_lipconst, full_total_time)
+  # Avglip cplip next
+  cplip_opts = AvgLipOptions(use_cplip=true, verbose=true)
+  cplip_soln = solveLipschitz(ffnet, cplip_opts)
+  cplip_lipconst = cplip_soln.objective_value
+  cplip_total_time = cplip_soln.total_time
+  @printf("avglip cplip lpconst: %.4e \t total time: %.3f\n", cplip_lipconst, cplip_total_time)
 
   df = DataFrame(
     naive_lipconst = [naive_lipconst],
     naive_total_secs = [naive_total_time],
-    full_lipconst = [full_lipconst],
-    full_total_secs = [full_total_time])
+    full_lipconst = [cplip_lipconst],
+    full_total_secs = [cplip_total_time])
   nnet_filename = basename(nnet_filepath)
   saveto = joinpath(saveto_dir, "$(nnet_filename)_avglip.csv")
   CSV.write(saveto, df)
@@ -161,14 +162,14 @@ function warmup(; verbose=false)
   ffnet = randomNetwork(xdims)
   lipsdp_soln = solveLipschitz(ffnet, LipSdpOptions(τ=10, mosek_opts=EVALS_MOSEK_OPTS))
   chordal_soln = solveLipschitz(ffnet, ChordalSdpOptions(τ=10, mosek_opts=EVALS_MOSEK_OPTS))
-  full_soln = solveLipschitz(ffnet, AvgLipOptions())
-  naive_soln = solveLipschitz(ffnet, AvgLipOptions(use_full=false))
+  cplip_soln = solveLipschitz(ffnet, AvgLipOptions(use_cplip=true))
+  naive_soln = solveLipschitz(ffnet, AvgLipOptions(use_cplip=false))
   rand_lipconst = randomizedLipschitz(ffnet)
   if verbose
     println("lipsdp val: $(sqrt(lipsdp_soln.values[:γ][end]))")
     println("chordal val: $(sqrt(chordal_soln.values[:γ][end]))")
-    println("avglip full: $(full_soln.objective_value)")
-    println("avglip naive: $(naive_soln.objective_value)")
+    println("cplip val: $(cplip_soln.objective_value)")
+    println("naivelip val: $(naive_soln.objective_value)")
     println("randomized: $(rand_lipconst)")
   end
   if verbose; @printf("warmup time: %.3f\n", time() - warmup_start_time) end

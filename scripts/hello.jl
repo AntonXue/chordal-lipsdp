@@ -40,57 +40,40 @@ ACAS_SAVETO_DIR = joinpath(DUMP_DIR, "acas"); isdir(ACAS_SAVETO_DIR) || mkdir(AC
 
 # Some batches of random networks
 rand_nnet_filepath(w, d) = "$(RAND_NNET_DIR)/rand-I2-O2-W$(w)-D$(d).nnet"
-dwτ2norm(d, w, τ) = (1 - (d/50)) * 2.0 + (d/50) * 1.6
+function dwτ2norm(d, w, τ)
+  if w == 10
+    return (1 - (d/50)) * 2.1 + (d/50) * 1.70
 
-# The versions for ChordalSDP
-RAND_W10 = [(rand_nnet_filepath(10, d), [(τ, dwτ2norm(d, 10, τ)) for τ in 0:15]) for d in 5:5:50]   # Done
-RAND_W20 = [(rand_nnet_filepath(20, d), [(τ, dwτ2norm(d, 20, τ)) for τ in 0:15]) for d in 5:5:50]   # Done
-RAND_W30 = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 5:5:50]   # Done
+  elseif w == 20
+    return (1 - (d/50)) * 2.1 + (d/50) * 1.65
 
-RAND_W40_A = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:15]) for d in 5:5:10] # Done
-RAND_W40_B = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:11]) for d in 15:5:20] # Done
-RAND_W40_C = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:09]) for d in 25:5:30] # Done
-RAND_W40_D = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:07]) for d in 35:5:40] # Done
-RAND_W40_E = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:06]) for d in 45:5:50] # Done
-RAND_W40 = [RAND_W40_A; RAND_W40_B; RAND_W40_C; RAND_W40_D; RAND_W40_E] # Done
+  elseif w == 30
+    return (1 - (d/50)) * 2.1 + (d/50) * 1.62
+  
+  else
+    return (1 - (d/50)) * 2.1 + (d/50) * 1.61
+  end
+end
 
-RAND_W50_A = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:09]) for d in 5:5:10] # Done
-RAND_W50_B = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:07]) for d in 15:5:20] # Done
-RAND_W50_C = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 25:5:30] # Done
-RAND_W50_D = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 35:5:40] # Done
-RAND_W50_E = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 45:5:50] # Done
-RAND_W50 = [RAND_W50_A; RAND_W50_B; RAND_W50_C; RAND_W50_D; RAND_W50_E]
+# The versions common to both ChordalSdp and LipSDP
+RAND_W10 = [(rand_nnet_filepath(10, d), [(τ, dwτ2norm(d, 10, τ)) for τ in 0:15]) for d in 5:5:50]
+RAND_W20 = [(rand_nnet_filepath(20, d), [(τ, dwτ2norm(d, 20, τ)) for τ in 0:15]) for d in 5:5:50]
+RAND_W30 = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 5:5:50]
+RAND_W40 = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:06]) for d in 5:5:50]
+RAND_W50 = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:06]) for d in 5:5:50]
 
 ALL_RAND = [RAND_W10; RAND_W20; RAND_W30; RAND_W40; RAND_W50]
 
-# Shorter versions with truncated tau values
-# Shorter versions for LipSDP
-RAND_W30_LA = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 5:5:10]  # Done
-RAND_W30_LB = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 15:5:20] # Done
-RAND_W30_LC = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 25:5:30] # Done
-RAND_W30_LD = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:15]) for d in 35:5:40] # Done
-RAND_W30_LE = [(rand_nnet_filepath(30, d), [(τ, dwτ2norm(d, 30, τ)) for τ in 0:09]) for d in 45:5:50] # TODO: D50
-RAND_W30_L = [RAND_W30_LA; RAND_W30_LB; RAND_W30_LC; RAND_W30_LD; RAND_W30_LE]
-
-#
-RAND_W40_LA = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:15]) for d in 5:5:10]  # Done
-RAND_W40_LB = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:15]) for d in 15:5:20] # Done
-RAND_W40_LC = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:15]) for d in 25:5:30]
-RAND_W40_LD = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:07]) for d in 35:5:40]
-RAND_W40_LE = [(rand_nnet_filepath(40, d), [(τ, dwτ2norm(d, 40, τ)) for τ in 0:06]) for d in 45:5:50]
-RAND_W40_L = [RAND_W40_LA; RAND_W40_LB; RAND_W40_LC; RAND_W40_LD; RAND_W40_LE]
-
-#
-RAND_W50_LA = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:15]) for d in 5:5:10]  # Done
-RAND_W50_LB = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:15]) for d in 15:5:20] # Done
-RAND_W50_LC = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:09]) for d in 25:5:30]
-RAND_W50_LD = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:07]) for d in 35:5:40]
-RAND_W50_LE = [(rand_nnet_filepath(50, d), [(τ, dwτ2norm(d, 50, τ)) for τ in 0:06]) for d in 45:5:50]
-RAND_W50_L = [RAND_W50_LA; RAND_W50_LB; RAND_W50_LC; RAND_W50_LD; RAND_W50_LE]
-#
-#
-
 SMALL_RAND = [(rand_nnet_filepath(10, d), 0:3, 2.0) for d in [5; 10; 15]]
+
+# Only include depths <= 25
+AVGLIP_RAND = [
+  RAND_W10[1]; RAND_W20[1]; RAND_W30[1]; RAND_W40[1]; RAND_W50[1];
+  RAND_W10[2]; RAND_W20[2]; RAND_W30[2]; RAND_W40[2]; RAND_W50[2];
+  RAND_W10[3]; RAND_W20[3]; RAND_W30[3]; RAND_W40[3]; RAND_W50[3];
+  RAND_W10[4]; RAND_W20[4]; RAND_W30[4]; RAND_W40[4]; RAND_W50[4];
+  RAND_W10[5]; RAND_W20[5]; RAND_W30[5]; RAND_W40[5]; RAND_W50[5];
+ ]
 
 # The ACAS networks
 ACAS_FILES = readdir(ACAS_NNET_DIR, join=true)
@@ -102,12 +85,6 @@ ACAS4 = filter(b -> (match(r".*run2a_4.*nnet", b[1]) isa RegexMatch), ALL_ACAS)
 ACAS5 = filter(b -> (match(r".*run2a_5.*nnet", b[1]) isa RegexMatch), ALL_ACAS)
 
 SMALL_ACAS = [ACAS1[1:2]; ACAS2[1:2]]
-
-#
-function runTriplet(nnet_filepath, method; mosek_opts = EVALS_MOSEK_OPTS)
-  
-end
-
 
 # Run a batch
 function runBatch(batch, method, saveto_dir; mosek_opts = EVALS_MOSEK_OPTS)
@@ -154,11 +131,7 @@ if !(args["nnet"] isa Nothing)
   scaled_ffnet, weight_scales = loadNeuralNetwork(args["nnet"], 2.0)
 end
 
-# run_rand_lipsdp() = runRandBatch(ALL_RAND, :lipsdp)
-run_rand_lipsdp_part1() = runRandBatch([RAND_W10; RAND_W20;], :lipsdp)
-run_rand_lipsdp_part2() = runRandBatch(RAND_W30_S, :lipsdp)
-# run_rand_lipsdp_part2() = runRandBatch([RAND_W30_SHORT: RAND_W40_SHORT; RAND_W50_SHORT;], :lipsdp)
-
+run_rand_lipsdp() = runRandBatch(ALL_RAND, :lipsdp)
 run_rand_chordal() = runRandBatch(ALL_RAND, :chordalsdp)
 
 run_acas_lipsdp() = runAcasBatch(ALL_ACAS, :lipsdp)
