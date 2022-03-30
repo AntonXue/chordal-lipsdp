@@ -8,7 +8,7 @@ using Random
 using Plots
 pyplot()
 
-using ..Stuff
+using ..Methods
 include("nnet_parser.jl"); using .NNetParser
 include("network_utils.jl");
 include("plotting.jl");

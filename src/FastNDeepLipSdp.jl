@@ -4,11 +4,11 @@ using LinearAlgebra
 using Printf
 using Random
 
-include("Stuff/Stuff.jl");
+include("Methods/Methods.jl");
 include("Utils/Utils.jl");
 
 import Reexport
-Reexport.@reexport using .Stuff
+Reexport.@reexport using .Methods
 Reexport.@reexport using .Utils
 
 # The default Mosek options to use

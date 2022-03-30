@@ -125,23 +125,23 @@ function runNNetChordalSdp(nnet_filepath, τnorm_pairs;
 end
 
 # Run the avg lip stuff
-function runNNetAvgLip(nnet_filepath; saveto_dir = joinpath(homedir(), "dump"))
+function runNNetFastLip(nnet_filepath; saveto_dir = joinpath(homedir(), "dump"))
   # Load the stuff and do things
   ffnet = loadNeuralNetwork(nnet_filepath)
 
-  # Avglip naive first
-  naive_opts = AvgLipOptions(use_cplip=false, verbose=true)
+  # Naive-Lip first
+  naive_opts = NaiveLipOptions()
   naive_soln = solveLipschitz(ffnet, naive_opts)
   naive_lipconst = naive_soln.objective_value
   naive_total_time = naive_soln.total_time
-  @printf("avglip naive lipconst: %.4e \t total time: %.3f\n", naive_lipconst, naive_total_time)
+  @printf("naive-lip lipconst: %.4e \t total time: %.3f\n", naive_lipconst, naive_total_time)
 
-  # Avglip cplip next
-  cplip_opts = AvgLipOptions(use_cplip=true, verbose=true)
+  # CP-Lip next
+  cplip_opts = CpLipOptions()
   cplip_soln = solveLipschitz(ffnet, cplip_opts)
   cplip_lipconst = cplip_soln.objective_value
   cplip_total_time = cplip_soln.total_time
-  @printf("avglip cplip lpconst: %.4e \t total time: %.3f\n", cplip_lipconst, cplip_total_time)
+  @printf("cp-lip lpconst: %.4e \t total time: %.3f\n", cplip_lipconst, cplip_total_time)
 
   df = DataFrame(
     naive_lipconst = [naive_lipconst],
@@ -162,14 +162,14 @@ function warmup(; verbose=false)
   ffnet = randomNetwork(xdims)
   lipsdp_soln = solveLipschitz(ffnet, LipSdpOptions(τ=10, mosek_opts=EVALS_MOSEK_OPTS))
   chordal_soln = solveLipschitz(ffnet, ChordalSdpOptions(τ=10, mosek_opts=EVALS_MOSEK_OPTS))
-  cplip_soln = solveLipschitz(ffnet, AvgLipOptions(use_cplip=true))
-  naive_soln = solveLipschitz(ffnet, AvgLipOptions(use_cplip=false))
+  naive_soln = solveLipschitz(ffnet, NaiveLipOptions())
+  cplip_soln = solveLipschitz(ffnet, CpLipOptions())
   rand_lipconst = randomizedLipschitz(ffnet)
   if verbose
     println("lipsdp val: $(sqrt(lipsdp_soln.values[:γ][end]))")
     println("chordal val: $(sqrt(chordal_soln.values[:γ][end]))")
-    println("cplip val: $(cplip_soln.objective_value)")
     println("naivelip val: $(naive_soln.objective_value)")
+    println("cplip val: $(cplip_soln.objective_value)")
     println("randomized: $(rand_lipconst)")
   end
   if verbose; @printf("warmup time: %.3f\n", time() - warmup_start_time) end
@@ -178,7 +178,7 @@ end
 #
 export EVALS_MOSEK_OPTS
 export RunNNetResult
-export warmup, runNNet, runNNetLipSdp, runNNetChordalSdp, runNNetAvgLip
+export warmup, runNNet, runNNetLipSdp, runNNetChordalSdp, runNNetFastLip
 
 end
 

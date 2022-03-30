@@ -4,8 +4,7 @@ using LinearAlgebra
 using Combinatorics
 
 # Options
-@with_kw struct AvgLipOptions <: MethodOptions
-  use_cplip::Bool = true
+@with_kw struct CpLipOptions <: MethodOptions
   verbose::Bool = false
 end
 
@@ -42,12 +41,8 @@ function βjmk(αs::VecF64, jmk::VecInt, m::Int)
 end
 
 # Calculate the θm value; recall that m = K in our case
-function runAvgLip(ffnet::NeuralNetwork, opts::AvgLipOptions)
+function runCpLip(ffnet::NeuralNetwork, opts::CpLipOptions)
   Ws = [M[:, 1:end-1] for M in ffnet.Ms]
-
-  # If we don't do the full sum, just do the naive one and return
-  if !opts.use_cplip; return prod(opnorm(Wk) for Wk in Ws) end
-  # Otherwise continue
 
   # The αs should be more smartly picked depending on ffnet.activ
   αs = [0.5 for k in 1:ffnet.K]
@@ -67,11 +62,11 @@ function runAvgLip(ffnet::NeuralNetwork, opts::AvgLipOptions)
 end
 
 # Call this
-function runQuery(inst::QueryInstance, opts::AvgLipOptions)
+function runQuery(inst::QueryInstance, opts::CpLipOptions)
   total_start_time = time()
 
   # Call the stuff
-  lipconst = runAvgLip(inst.ffnet, opts)
+  lipconst = runCpLip(inst.ffnet, opts)
   values = Dict(:lipconst => lipconst)
   total_time = time() - total_start_time
   if opts.verbose
