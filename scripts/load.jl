@@ -26,4 +26,4 @@ ffnet = loadNeuralNetwork(args["nnet"])
 
 scaled_ffnet, αs = loadNeuralNetwork(args["nnet"], 2.0)
 
-
+Ws = [M[:, 1:end-1] for M in ffnet.Ms]
