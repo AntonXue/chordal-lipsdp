@@ -26,6 +26,37 @@ function solveLipschitz(ffnet::NeuralNetwork, opts::MethodOptions)
   return soln
 end
 
+# Solve a problem instance also
+function solveLipschitz(ffnet::NeuralNetwork, weight_scales :: VecF64, method;
+                        tau = 2,
+                        mosek_opts = DEFAULT_MOSEK_OPTS,
+                        verbose = true)
+  # Construct the options given the method
+  if method == :lipsdp
+    opts = LipSdpOptions(τ=tau, mosek_opts=mosek_opts, verbose=verbose)
+  elseif method == :chordalsdp
+    opts = ChordalSdpOptions(τ=tau, mosek_opts=mosek_opts, verbose=verbose)
+  elseif method == :naivelip
+    opts = NaiveLipOptions(verbose=verbose)
+  elseif method == :cplip
+    opts = CpLipOptions(verbose=verbose)
+  else
+    error("Unrecognized method: $(method)")
+  end
+
+  # Call the above
+  soln = solveLipschitz(ffnet, opts)
+
+  # Do the scaling to get the lipconst
+  if method == :lipsdp || method == :chordalsdp
+    lipconst = sqrt(soln.values[:γ][end]) / prod(weight_scales)
+  else
+    lipconst = soln.objective_value
+  end
+  return soln, lipconst
+end
+
+
 export DEFAULT_MOSEK_OPTS
 export solveLipschitz
 
